@@ -101,8 +101,52 @@ function _timeToSeconds(timeObj) {
  */
 function _secondsToTime(seconds) {
     var t = new Time();
-    t.seconds = seconds;
+    t.seconds = parseFloat(seconds) || 0;
     return t;
+}
+
+// The bridge passes a command's arguments as a single JSON string (the
+// function's first positional parameter). Parse it into a plain object so
+// functions can read named fields. Also unwraps a {params:{...}} envelope and
+// tolerates being handed a real object or a non-JSON value.
+function _args(a) {
+    if (a && typeof a === "object") return a;
+    if (typeof a === "string" && a.length && a.charAt(0) === "{") {
+        try {
+            var o = JSON.parse(a);
+            if (o && typeof o === "object" && o.params && typeof o.params === "object") return o.params;
+            return o || {};
+        } catch (e) {}
+    }
+    return {};
+}
+
+// Sequence still-image presets append a frame number before the extension
+// (e.g. frame.png -> frame0.png). Find that file and rename it to the exact
+// requested path; returns the final path.
+function _resolveExportedStill(outPath) {
+    try {
+        var f = new File(outPath);
+        if (f.exists) return f.fsName;
+        var dir = f.parent;
+        var name = f.name;
+        var dot = name.lastIndexOf(".");
+        var baseN = (dot >= 0) ? name.substring(0, dot) : name;
+        var ext = (dot >= 0) ? name.substring(dot) : "";
+        var files = dir.getFiles();
+        for (var i = 0; i < files.length; i++) {
+            if (!(files[i] instanceof File)) continue;
+            var fn = files[i].name;
+            if (fn.indexOf(baseN) === 0 && ext === fn.substring(fn.length - ext.length)) {
+                var mid = fn.substring(baseN.length, fn.length - ext.length);
+                if (/^[0-9]+$/.test(mid)) {
+                    try { if (f.exists) f.remove(); } catch (e1) {}
+                    try { files[i].rename(name); return dir.fsName + "/" + name; } catch (e2) { return files[i].fsName; }
+                }
+            }
+        }
+    } catch (e) {}
+    return outPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -906,42 +950,54 @@ function exportFrame(outputPath, format) {
             return _err("No active sequence");
         }
 
-        if (!outputPath || outputPath === "") {
+        // Args arrive as a single JSON string; also accept a {params:{...}}
+        // envelope, snake_case keys, or a direct positional path.
+        var a = _args(outputPath);
+        var outPath = a.outputPath || a.output_path ||
+            ((typeof outputPath === "string" && outputPath.charAt(0) !== "{") ? outputPath : "");
+        format = a.format || ((typeof format === "string" && format) ? format : "PNG");
+        if (!outPath || outPath === "") {
             return _err("outputPath is required");
         }
+        format = String(format).toUpperCase();
+        if (format === "JPG") { format = "JPEG"; }
+        if (format !== "PNG" && format !== "JPEG") { format = "PNG"; }
 
-        format = (format || "PNG").toUpperCase();
-        if (format !== "PNG" && format !== "JPEG" && format !== "JPG") {
-            format = "PNG";
-        }
-        if (format === "JPG") {
-            format = "JPEG";
+        // seq.exportFramePNG/JPEG were removed in newer Premiere, and the QE
+        // exporter only dumps the (often stale) program-monitor cache. Render
+        // the frame fresh with the in-process encoder using a still preset.
+        var contents = app.path + "Contents/";
+        var presetMap = {
+            "PNG": "MediaIO/systempresets/3F3F3F3F_504E4720/PNG Sequence (Match Source).epr",
+            "JPEG": "MediaIO/systempresets/3F3F3F3F_4A504547/JPEG Sequence (Match Source).epr"
+        };
+        var preset = contents + presetMap[format];
+        if (!File(preset).exists) {
+            // Fallback to the built-in single-frame preset (outputs Targa).
+            preset = contents + "Settings/EncoderPresets/ExportFrame.epr";
         }
 
-        // Get the current player position (CTI)
+        // Capture the current playhead (CTI) as a single-frame in/out range,
+        // saving and restoring the user's existing in/out marks.
         var time = seq.getPlayerPosition();
+        var oneFrame = parseInt(seq.timebase, 10) || 10594584000;
+        var savedIn = seq.getInPoint();
+        var savedOut = seq.getOutPoint();
+        seq.setInPoint(time.ticks);
+        seq.setOutPoint(String(Number(time.ticks) + oneFrame));
+        var encResult = seq.exportAsMediaDirect(outPath, preset, 1 /* in-to-out */);
+        try {
+            seq.setInPoint(_secondsToTime(savedIn).ticks);
+            seq.setOutPoint(_secondsToTime(savedOut).ticks);
+        } catch (re) { /* best-effort restore */ }
 
-        // Premiere Pro provides sequence.exportFramePNG(time, outputPath)
-        // for some versions, or we use the QE approach.
-        if (format === "PNG" && seq.exportFramePNG) {
-            seq.exportFramePNG(time, outputPath);
-        } else if (format === "JPEG" && seq.exportFrameJPEG) {
-            seq.exportFrameJPEG(time, outputPath);
-        } else {
-            // Fallback: try the QE DOM
-            app.enableQE();
-            var qeSeq = qe.project.getActiveSequence();
-            if (qeSeq) {
-                qeSeq.exportFramePNG(time.ticks, outputPath);
-            } else {
-                return _err("Cannot export frame: no supported method available for format " + format);
-            }
-        }
+        var finalPath = _resolveExportedStill(outPath);
 
         return _ok({
-            outputPath: outputPath,
+            outputPath: finalPath || outPath,
             format: format,
             timeSeconds: _timeToSeconds(time),
+            encoder: encResult,
             status: "frame_exported"
         });
     } catch (e) {
@@ -1842,12 +1898,17 @@ function setPlayheadPosition(seconds) {
             return _err("No active sequence");
         }
 
-        seconds = parseFloat(seconds) || 0;
-        var newTime = _secondsToTime(seconds);
+        // Args arrive as a single JSON string ({"seconds": N}); fall back to a
+        // direct numeric value when called positionally.
+        var a = _args(seconds);
+        var s = (a.seconds !== undefined) ? a.seconds : seconds;
+        s = parseFloat(s);
+        if (isNaN(s)) { s = 0; }
+        var newTime = _secondsToTime(s);
         seq.setPlayerPosition(newTime.ticks);
 
         return _ok({
-            seconds: seconds,
+            seconds: s,
             sequenceName: seq.name || "",
             sequenceID: seq.sequenceID || ""
         });
