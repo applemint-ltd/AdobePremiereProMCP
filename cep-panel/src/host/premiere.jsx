@@ -4457,26 +4457,56 @@ function pasteEffects(destTrackType, destTrackIndex, destClipIndex) {
 // Motion & Transform helpers
 // ---------------------------------------------------------------------------
 
-function _getMotionComponent(trackIndex, clipIndex) {
+function _getClipAt(trackIndex, clipIndex) {
     var seq = app.project.activeSequence; if (!seq) return null;
     trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
     if (trackIndex >= seq.videoTracks.numTracks) return null;
     var track = seq.videoTracks[trackIndex];
     if (!track.clips || clipIndex >= track.clips.numItems) return null;
-    var clip = track.clips[clipIndex];
-    if (!clip.components || clip.components.numItems < 1) return null;
-    return clip.components[0];
+    return track.clips[clipIndex];
+}
+
+// Locate a component by matchName/displayName instead of assuming a fixed
+// index. Component order is not guaranteed (e.g. some clips expose Opacity at
+// index 0 and Motion at index 1), so index-based lookup silently grabs the
+// wrong component.
+function _findComponentInClip(clip, matchName, displayName) {
+    if (!clip || !clip.components) return null;
+    for (var i = 0; i < clip.components.numItems; i++) {
+        var c = clip.components[i];
+        if (!c) continue;
+        if ((matchName && c.matchName === matchName) || (displayName && c.displayName === displayName)) return c;
+    }
+    return null;
+}
+
+function _getMotionComponentForClip(clip) {
+    return _findComponentInClip(clip, "AE.ADBE Motion", "Motion");
+}
+
+function _getMotionComponent(trackIndex, clipIndex) {
+    return _getMotionComponentForClip(_getClipAt(trackIndex, clipIndex));
 }
 
 function _getOpacityComponent(trackIndex, clipIndex) {
-    var seq = app.project.activeSequence; if (!seq) return null;
-    trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
-    if (trackIndex >= seq.videoTracks.numTracks) return null;
-    var track = seq.videoTracks[trackIndex];
-    if (!track.clips || clipIndex >= track.clips.numItems) return null;
-    var clip = track.clips[clipIndex];
-    if (!clip.components || clip.components.numItems < 2) return null;
-    return clip.components[1];
+    return _findComponentInClip(_getClipAt(trackIndex, clipIndex), "AE.ADBE Opacity", "Opacity");
+}
+
+// Read the source media's pixel dimensions. ExtendScript's
+// FootageInterpretation does not expose frame width/height, so we parse the
+// item's "VideoInfo" project-metadata column (e.g. "426 x 240 (1.0)").
+// Returns the supplied fallback dimensions when the media has no video info.
+function _getSourceDimensions(projectItem, fallbackW, fallbackH) {
+    var dims = { width: fallbackW, height: fallbackH };
+    try {
+        if (projectItem && projectItem.getProjectMetadata) {
+            var md = projectItem.getProjectMetadata();
+            var m = md.match(/VideoInfo[^>]*>\s*(\d+)\s*x\s*(\d+)/);
+            if (!m) m = md.match(/>\s*(\d+)\s*x\s*(\d+)\s*\(/);
+            if (m) { dims.width = parseInt(m[1], 10); dims.height = parseInt(m[2], 10); }
+        }
+    } catch (e) {}
+    return dims;
 }
 
 function _findProperty(comp, displayName) {
@@ -8963,12 +8993,19 @@ function scaleAllClipsToFrame() {
             for (var ci = 0; ci < track.clips.numItems; ci++) {
                 try {
                     var clip = track.clips[ci];
-                    if (!clip.components) continue;
-                    var motion = clip.components[0];
-                    if (!motion || motion.displayName !== "Motion") continue;
-                    for (var pi = 0; pi < motion.properties.numItems; pi++) {
-                        if (motion.properties[pi].displayName === "Scale") { motion.properties[pi].setValue(100, true); scaled++; break; }
-                    }
+                    var motion = _getMotionComponentForClip(clip);
+                    if (!motion) continue;
+                    var scaleP = _findProperty(motion, "Scale");
+                    if (!scaleP) continue;
+                    var dims = _getSourceDimensions(clip.projectItem, seqWidth, seqHeight);
+                    var clipW = dims.width || seqWidth;
+                    var clipH = dims.height || seqHeight;
+                    // Fit to frame: scale up/down so the whole clip is visible.
+                    var scale = Math.min((seqWidth / clipW) * 100, (seqHeight / clipH) * 100);
+                    scaleP.setValue(scale, true);
+                    var posP = _findProperty(motion, "Position");
+                    if (posP) posP.setValue([0.5, 0.5], true);
+                    scaled++;
                 } catch (se) {}
             }
         }
@@ -10425,26 +10462,26 @@ function resetCrop(trackIndex, clipIndex) { try { return setCrop(trackIndex, cli
 // ---------------------------------------------------------------------------
 // Transform (extended)
 // ---------------------------------------------------------------------------
-function setUniformScale(trackIndex, clipIndex, enabled) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; var en = (enabled === true || enabled === "true" || enabled === 1); if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = clip.components[0]; var uniformP = motion.properties.getParamForDisplayName("Uniform Scale"); if (!uniformP) { for (var i = 0; i < motion.properties.numItems; i++) { if (motion.properties[i].displayName.indexOf("Uniform") >= 0) { uniformP = motion.properties[i]; break; } } } if (uniformP) uniformP.setValue(en ? 1 : 0, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, uniformScale: en }); } catch (e) { return _err("setUniformScale failed: " + e.message); } }
+function setUniformScale(trackIndex, clipIndex, enabled) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; var en = (enabled === true || enabled === "true" || enabled === 1); if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var uniformP = motion.properties.getParamForDisplayName("Uniform Scale"); if (!uniformP) { for (var i = 0; i < motion.properties.numItems; i++) { if (motion.properties[i].displayName.indexOf("Uniform") >= 0) { uniformP = motion.properties[i]; break; } } } if (uniformP) uniformP.setValue(en ? 1 : 0, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, uniformScale: en }); } catch (e) { return _err("setUniformScale failed: " + e.message); } }
 
-function getTransformProperties(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = clip.components[0]; var result = { trackIndex: trackIndex, clipIndex: clipIndex }; var props = ["Position", "Scale", "Scale Width", "Scale Height", "Rotation", "Anchor Point", "Anti-flicker Filter", "Uniform Scale"]; for (var i = 0; i < props.length; i++) { var p = motion.properties.getParamForDisplayName(props[i]); if (p) { var key = props[i].replace(/[\s-]/g, "_").toLowerCase(); result[key] = p.getValue(); } } var opacityComp = clip.components[1]; if (opacityComp) { var opP = opacityComp.properties.getParamForDisplayName("Opacity"); if (opP) result.opacity = opP.getValue(); } return _ok(result); } catch (e) { return _err("getTransformProperties failed: " + e.message); } }
+function getTransformProperties(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var result = { trackIndex: trackIndex, clipIndex: clipIndex }; var props = ["Position", "Scale", "Scale Width", "Scale Height", "Rotation", "Anchor Point", "Anti-flicker Filter", "Uniform Scale"]; for (var i = 0; i < props.length; i++) { var p = motion.properties.getParamForDisplayName(props[i]); if (p) { var key = props[i].replace(/[\s-]/g, "_").toLowerCase(); result[key] = p.getValue(); } } var opacityComp = _findComponentInClip(clip, "AE.ADBE Opacity", "Opacity"); if (opacityComp) { var opP = opacityComp.properties.getParamForDisplayName("Opacity"); if (opP) result.opacity = opP.getValue(); } return _ok(result); } catch (e) { return _err("getTransformProperties failed: " + e.message); } }
 
-function setAntiFlicker(trackIndex, clipIndex, value) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; value = parseFloat(value) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = clip.components[0]; var afP = motion.properties.getParamForDisplayName("Anti-flicker Filter"); if (!afP) return _err("Anti-flicker Filter property not found"); afP.setValue(value, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, antiFlicker: value }); } catch (e) { return _err("setAntiFlicker failed: " + e.message); } }
+function setAntiFlicker(trackIndex, clipIndex, value) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; value = parseFloat(value) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var afP = motion.properties.getParamForDisplayName("Anti-flicker Filter"); if (!afP) return _err("Anti-flicker Filter property not found"); afP.setValue(value, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, antiFlicker: value }); } catch (e) { return _err("setAntiFlicker failed: " + e.message); } }
 
-function resetTransform(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var frameW = parseInt(settings.videoFrameWidth) || 1920; var frameH = parseInt(settings.videoFrameHeight) || 1080; var motion = clip.components[0]; var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); var rotP = motion.properties.getParamForDisplayName("Rotation"); var anchorP = motion.properties.getParamForDisplayName("Anchor Point"); if (posP) posP.setValue([frameW / 2, frameH / 2], true); if (scaleP) scaleP.setValue(100, true); if (rotP) rotP.setValue(0, true); if (anchorP) anchorP.setValue([frameW / 2, frameH / 2], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, reset: true }); } catch (e) { return _err("resetTransform failed: " + e.message); } }
+function resetTransform(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var frameW = parseInt(settings.videoFrameWidth) || 1920; var frameH = parseInt(settings.videoFrameHeight) || 1080; var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); var rotP = motion.properties.getParamForDisplayName("Rotation"); var anchorP = motion.properties.getParamForDisplayName("Anchor Point"); if (posP) posP.setValue([0.5, 0.5], true); if (scaleP) scaleP.setValue(100, true); if (rotP) rotP.setValue(0, true); if (anchorP) anchorP.setValue([0.5, 0.5], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, reset: true }); } catch (e) { return _err("resetTransform failed: " + e.message); } }
 
-function centerClip(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var frameW = parseInt(settings.videoFrameWidth) || 1920; var frameH = parseInt(settings.videoFrameHeight) || 1080; var motion = clip.components[0]; var posP = motion.properties.getParamForDisplayName("Position"); if (posP) posP.setValue([frameW / 2, frameH / 2], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, x: frameW / 2, y: frameH / 2 }); } catch (e) { return _err("centerClip failed: " + e.message); } }
+function centerClip(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var frameW = parseInt(settings.videoFrameWidth) || 1920; var frameH = parseInt(settings.videoFrameHeight) || 1080; var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var posP = motion.properties.getParamForDisplayName("Position"); if (posP) posP.setValue([0.5, 0.5], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, x: frameW / 2, y: frameH / 2 }); } catch (e) { return _err("centerClip failed: " + e.message); } }
 
-function fitClipToFrame(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var pi = clip.projectItem; var clipW = seqW; var clipH = seqH; if (pi) { var md = pi.getFootageInterpretation(); if (md && md.frameWidth) clipW = md.frameWidth; if (md && md.frameHeight) clipH = md.frameHeight; } var scaleX = (seqW / clipW) * 100; var scaleY = (seqH / clipH) * 100; var scale = Math.min(scaleX, scaleY); var motion = clip.components[0]; var scaleP = motion.properties.getParamForDisplayName("Scale"); var posP = motion.properties.getParamForDisplayName("Position"); if (scaleP) scaleP.setValue(scale, true); if (posP) posP.setValue([seqW / 2, seqH / 2], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, scale: scale, mode: "fit" }); } catch (e) { return _err("fitClipToFrame failed: " + e.message); } }
+function fitClipToFrame(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var dims = _getSourceDimensions(clip.projectItem, seqW, seqH); var clipW = dims.width || seqW; var clipH = dims.height || seqH; var scaleX = (seqW / clipW) * 100; var scaleY = (seqH / clipH) * 100; var scale = Math.min(scaleX, scaleY); var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var scaleP = _findProperty(motion, "Scale"); var posP = _findProperty(motion, "Position"); if (scaleP) scaleP.setValue(scale, true); if (posP) posP.setValue([0.5, 0.5], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, sourceWidth: clipW, sourceHeight: clipH, scale: scale, mode: "fit" }); } catch (e) { return _err("fitClipToFrame failed: " + e.message); } }
 
-function fillFrame(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var pi = clip.projectItem; var clipW = seqW; var clipH = seqH; if (pi) { var md = pi.getFootageInterpretation(); if (md && md.frameWidth) clipW = md.frameWidth; if (md && md.frameHeight) clipH = md.frameHeight; } var scaleX = (seqW / clipW) * 100; var scaleY = (seqH / clipH) * 100; var scale = Math.max(scaleX, scaleY); var motion = clip.components[0]; var scaleP = motion.properties.getParamForDisplayName("Scale"); var posP = motion.properties.getParamForDisplayName("Position"); if (scaleP) scaleP.setValue(scale, true); if (posP) posP.setValue([seqW / 2, seqH / 2], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, scale: scale, mode: "fill" }); } catch (e) { return _err("fillFrame failed: " + e.message); } }
+function fillFrame(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var dims = _getSourceDimensions(clip.projectItem, seqW, seqH); var clipW = dims.width || seqW; var clipH = dims.height || seqH; var scaleX = (seqW / clipW) * 100; var scaleY = (seqH / clipH) * 100; var scale = Math.max(scaleX, scaleY); var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var scaleP = _findProperty(motion, "Scale"); var posP = _findProperty(motion, "Position"); if (scaleP) scaleP.setValue(scale, true); if (posP) posP.setValue([0.5, 0.5], true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, sourceWidth: clipW, sourceHeight: clipH, scale: scale, mode: "fill" }); } catch (e) { return _err("fillFrame failed: " + e.message); } }
 
 // ---------------------------------------------------------------------------
 // Picture-in-Picture
 // ---------------------------------------------------------------------------
-function createPIP(mainTrackIndex, mainClipIndex, pipTrackIndex, pipClipIndex, position, scale) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); pipTrackIndex = parseInt(pipTrackIndex, 10) || 0; pipClipIndex = parseInt(pipClipIndex, 10) || 0; scale = parseFloat(scale) || 30; position = String(position || "bottom-right"); if (pipTrackIndex >= seq.videoTracks.numTracks) return _err("PIP track index out of range"); var pipClip = seq.videoTracks[pipTrackIndex].clips[pipClipIndex]; if (!pipClip) return _err("PIP clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var margin = 0.05; var posX, posY; switch (position) { case "top-left": posX = seqW * (scale / 200 + margin); posY = seqH * (scale / 200 + margin); break; case "top-right": posX = seqW * (1 - scale / 200 - margin); posY = seqH * (scale / 200 + margin); break; case "bottom-left": posX = seqW * (scale / 200 + margin); posY = seqH * (1 - scale / 200 - margin); break; case "center": posX = seqW / 2; posY = seqH / 2; break; default: posX = seqW * (1 - scale / 200 - margin); posY = seqH * (1 - scale / 200 - margin); break; } var motion = pipClip.components[0]; var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); if (posP) posP.setValue([posX, posY], true); if (scaleP) scaleP.setValue(scale, true); return _ok({ pipTrackIndex: pipTrackIndex, pipClipIndex: pipClipIndex, position: position, scale: scale, x: posX, y: posY }); } catch (e) { return _err("createPIP failed: " + e.message); } }
+function createPIP(mainTrackIndex, mainClipIndex, pipTrackIndex, pipClipIndex, position, scale) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); pipTrackIndex = parseInt(pipTrackIndex, 10) || 0; pipClipIndex = parseInt(pipClipIndex, 10) || 0; scale = parseFloat(scale) || 30; position = String(position || "bottom-right"); if (pipTrackIndex >= seq.videoTracks.numTracks) return _err("PIP track index out of range"); var pipClip = seq.videoTracks[pipTrackIndex].clips[pipClipIndex]; if (!pipClip) return _err("PIP clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var margin = 0.05; var posX, posY; switch (position) { case "top-left": posX = seqW * (scale / 200 + margin); posY = seqH * (scale / 200 + margin); break; case "top-right": posX = seqW * (1 - scale / 200 - margin); posY = seqH * (scale / 200 + margin); break; case "bottom-left": posX = seqW * (scale / 200 + margin); posY = seqH * (1 - scale / 200 - margin); break; case "center": posX = seqW / 2; posY = seqH / 2; break; default: posX = seqW * (1 - scale / 200 - margin); posY = seqH * (1 - scale / 200 - margin); break; } var motion = _getMotionComponentForClip(pipClip); if (!motion) return _err("Could not access Motion component"); var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); if (posP) posP.setValue([posX / seqW, posY / seqH], true); if (scaleP) scaleP.setValue(scale, true); return _ok({ pipTrackIndex: pipTrackIndex, pipClipIndex: pipClipIndex, position: position, scale: scale, x: posX / seqW, y: posY / seqH }); } catch (e) { return _err("createPIP failed: " + e.message); } }
 
-function removePIP(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var motion = clip.components[0]; var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); if (posP) posP.setValue([seqW / 2, seqH / 2], true); if (scaleP) scaleP.setValue(100, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, reset: true }); } catch (e) { return _err("removePIP failed: " + e.message); } }
+function removePIP(trackIndex, clipIndex) { try { if (!app.project) return _err("No project is open"); var seq = app.project.activeSequence; if (!seq) return _err("No active sequence"); trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0; if (trackIndex >= seq.videoTracks.numTracks) return _err("Track index out of range"); var clip = seq.videoTracks[trackIndex].clips[clipIndex]; if (!clip) return _err("Clip not found"); var settings = seq.getSettings(); var seqW = parseInt(settings.videoFrameWidth) || 1920; var seqH = parseInt(settings.videoFrameHeight) || 1080; var motion = _getMotionComponentForClip(clip); if (!motion) return _err("Could not access Motion component"); var posP = motion.properties.getParamForDisplayName("Position"); var scaleP = motion.properties.getParamForDisplayName("Scale"); if (posP) posP.setValue([0.5, 0.5], true); if (scaleP) scaleP.setValue(100, true); return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, reset: true }); } catch (e) { return _err("removePIP failed: " + e.message); } }
 
 // ---------------------------------------------------------------------------
 // Opacity & Masking
@@ -20496,10 +20533,9 @@ function applyFlipHorizontal(trackIndex, clipIndex) {
         var r = _resolveClipForEffect("video", trackIndex, clipIndex);
         if (r.error) return _err(r.error);
         var clip = r.clip;
-        // The Motion component is at index 0 for video clips
-        if (clip.components && clip.components.numItems > 0) {
-            var motion = clip.components[0];
-            if (motion.displayName === "Motion") {
+        var motion = _getMotionComponentForClip(clip);
+        if (motion) {
+            {
                 // Find Scale Width or use the Flip effect approach
                 for (var p = 0; p < motion.properties.numItems; p++) {
                     var pr = motion.properties[p];
