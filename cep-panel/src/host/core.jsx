@@ -29,6 +29,45 @@ if (typeof JSON === "undefined") {
     };
 }
 
+// ── ES5 polyfills for older ExtendScript engines (all guarded; no-op if present) ──
+if (!Date.prototype.toISOString) {
+    Date.prototype.toISOString = function () {
+        function p2(n) { return n < 10 ? "0" + n : "" + n; }
+        function p3(n) { return n < 100 ? (n < 10 ? "00" + n : "0" + n) : "" + n; }
+        return this.getUTCFullYear() + "-" + p2(this.getUTCMonth() + 1) + "-" + p2(this.getUTCDate()) +
+            "T" + p2(this.getUTCHours()) + ":" + p2(this.getUTCMinutes()) + ":" + p2(this.getUTCSeconds()) +
+            "." + p3(this.getUTCMilliseconds()) + "Z";
+    };
+}
+if (!Array.prototype.indexOf) {
+    Array.prototype.indexOf = function (item, from) {
+        var len = this.length >>> 0, i = from ? Number(from) : 0;
+        if (i < 0) { i = Math.max(0, len + i); }
+        for (; i < len; i++) { if (this[i] === item) { return i; } }
+        return -1;
+    };
+}
+if (!Array.prototype.lastIndexOf) {
+    Array.prototype.lastIndexOf = function (item) {
+        for (var i = (this.length >>> 0) - 1; i >= 0; i--) { if (this[i] === item) { return i; } }
+        return -1;
+    };
+}
+if (!Array.prototype.filter) {
+    Array.prototype.filter = function (fn, ctx) {
+        var out = [], len = this.length >>> 0;
+        for (var i = 0; i < len; i++) { if (i in this && fn.call(ctx, this[i], i, this)) { out.push(this[i]); } }
+        return out;
+    };
+}
+if (!Object.keys) {
+    Object.keys = function (obj) {
+        var keys = [];
+        for (var k in obj) { if (obj.hasOwnProperty(k)) { keys.push(k); } }
+        return keys;
+    };
+}
+
 // ── Shared Helpers ────────────────────────────────────────────────────
 
 /**

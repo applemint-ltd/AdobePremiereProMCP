@@ -478,7 +478,111 @@ func (c *PremiereBridgeClient) EvalCommand(ctx context.Context, functionName, ar
 		return "", fmt.Errorf("EvalCommand(%s): %s", functionName, resp.GetErrorMessage())
 	}
 
-	return resp.GetResultJson(), nil
+	return unwrapEnvelope(functionName, resp.GetResultJson())
+}
+
+// unwrapEnvelope unwraps the {success, data, error} envelope that the
+// ExtendScript host functions (core.jsx / premiere.jsx) return. On success it
+// returns the inner `data` object as JSON so callers can unmarshal directly
+// into their typed result structs. On failure it surfaces the `error` string
+// as a Go error. Payloads that are not a recognizable envelope (no boolean
+// `success` field) are returned unchanged, so raw/non-enveloped results still
+// pass through untouched.
+func unwrapEnvelope(functionName, resultJSON string) (string, error) {
+	if resultJSON == "" {
+		return "", nil
+	}
+	var env struct {
+		Success *bool           `json:"success"`
+		Data    json.RawMessage `json:"data"`
+		Error   string          `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &env); err != nil || env.Success == nil {
+		// Not an envelope (e.g. a bare value or non-JSON) — pass through.
+		return resultJSON, nil
+	}
+	if !*env.Success {
+		if env.Error != "" {
+			return "", fmt.Errorf("%s: %s", functionName, env.Error)
+		}
+		return "", fmt.Errorf("%s: ExtendScript reported failure", functionName)
+	}
+	if len(env.Data) == 0 {
+		return "{}", nil
+	}
+	// The ExtendScript host emits camelCase keys (e.g. "frameSizeHorizontal"),
+	// but the Go result structs use snake_case json tags. Normalize keys so
+	// typed unmarshalling populates correctly. Only pure-identifier camelCase
+	// keys are converted; keys containing dots/spaces/etc. (filenames, custom
+	// metadata) are left untouched to avoid corrupting data-keyed maps.
+	var anyData any
+	if err := json.Unmarshal(env.Data, &anyData); err == nil {
+		if normalized, err := json.Marshal(normalizeKeys(anyData)); err == nil {
+			return string(normalized), nil
+		}
+	}
+	return string(env.Data), nil
+}
+
+// normalizeKeys recursively rewrites camelCase object keys to snake_case.
+func normalizeKeys(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(t))
+		for k, val := range t {
+			m[snakeKey(k)] = normalizeKeys(val)
+		}
+		return m
+	case []any:
+		for i := range t {
+			t[i] = normalizeKeys(t[i])
+		}
+		return t
+	default:
+		return v
+	}
+}
+
+// snakeKey converts a pure-identifier camelCase key to snake_case. Keys that
+// are not plain identifiers (contain '.', ' ', '_', '-', etc.) are returned
+// unchanged so filenames and custom metadata keys are never mangled.
+func snakeKey(k string) string {
+	hasUpper := false
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'):
+		default:
+			return k // not a plain identifier — leave as-is
+		}
+	}
+	if !hasUpper || k == "" {
+		return k
+	}
+	out := make([]byte, 0, len(k)+4)
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		if c >= 'A' && c <= 'Z' {
+			if i > 0 {
+				prev := k[i-1]
+				var next byte
+				if i+1 < len(k) {
+					next = k[i+1]
+				}
+				lowerPrev := (prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9')
+				acronymEnd := prev >= 'A' && prev <= 'Z' && next >= 'a' && next <= 'z'
+				if lowerPrev || acronymEnd {
+					out = append(out, '_')
+				}
+			}
+			out = append(out, c+32)
+		} else {
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }
 
 // ---------------------------------------------------------------------------
