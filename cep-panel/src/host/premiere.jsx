@@ -972,30 +972,49 @@ function exportFrame(outputPath, format) {
             "JPEG": "MediaIO/systempresets/3F3F3F3F_4A504547/JPEG Sequence (Match Source).epr"
         };
         var preset = contents + presetMap[format];
+        var usedFallback = false;
         if (!File(preset).exists) {
-            // Fallback to the built-in single-frame preset (outputs Targa).
+            // Built-in single-frame preset; outputs Targa, not the requested
+            // PNG/JPEG, so report that honestly rather than mislabeling.
             preset = contents + "Settings/EncoderPresets/ExportFrame.epr";
+            usedFallback = true;
+        }
+        if (!File(preset).exists) {
+            return _err("No still-image export preset available for format " + format);
         }
 
+        // Remove any stale file at the target path so a prior export's output
+        // can't be mistaken for this one's.
+        try { var staleTarget = new File(outPath); if (staleTarget.exists) { staleTarget.remove(); } } catch (se) {}
+
         // Capture the current playhead (CTI) as a single-frame in/out range,
-        // saving and restoring the user's existing in/out marks.
+        // saving and restoring the user's existing in/out marks even if the
+        // export throws.
         var time = seq.getPlayerPosition();
         var oneFrame = parseInt(seq.timebase, 10) || 10594584000;
         var savedIn = seq.getInPoint();
         var savedOut = seq.getOutPoint();
         seq.setInPoint(time.ticks);
         seq.setOutPoint(String(Number(time.ticks) + oneFrame));
-        var encResult = seq.exportAsMediaDirect(outPath, preset, 1 /* in-to-out */);
+        var encResult;
         try {
-            seq.setInPoint(_secondsToTime(savedIn).ticks);
-            seq.setOutPoint(_secondsToTime(savedOut).ticks);
-        } catch (re) { /* best-effort restore */ }
+            encResult = seq.exportAsMediaDirect(outPath, preset, 1 /* in-to-out */);
+        } finally {
+            try {
+                seq.setInPoint(_secondsToTime(savedIn).ticks);
+                seq.setOutPoint(_secondsToTime(savedOut).ticks);
+            } catch (re) { /* best-effort restore */ }
+        }
 
         var finalPath = _resolveExportedStill(outPath);
+        if (!finalPath || !File(finalPath).exists) {
+            return _err("Frame export produced no file (encoder: " + encResult + ", preset: " + preset + ")");
+        }
 
         return _ok({
-            outputPath: finalPath || outPath,
-            format: format,
+            outputPath: finalPath,
+            format: usedFallback ? "TGA" : format,
+            requestedFormat: format,
             timeSeconds: _timeToSeconds(time),
             encoder: encResult,
             status: "frame_exported"
