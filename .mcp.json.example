@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "premierpro-mcp": {
+      "type": "stdio",
+      "command": "/ABSOLUTE/PATH/TO/AdobePremiereProMCP/go-orchestrator/bin/premierpro-mcp",
+      "args": [
+        "--transport",
+        "stdio",
+        "--log-level",
+        "error"
+      ],
+      "env": {}
+    }
+  }
+}
