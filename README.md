@@ -185,6 +185,10 @@ cd PremierProMCP
 # Copy env template
 cp .env.example .env
 
+# Copy the MCP config template, then edit .mcp.json to set the
+# absolute path to the built premierpro-mcp binary (see below)
+cp .mcp.json.example .mcp.json
+
 # Install dependencies
 just install
 
@@ -205,7 +209,17 @@ just install-panel
 
 ### As an MCP Server (Claude Code, Claude Desktop, Cursor, etc.)
 
-Add to your MCP client configuration:
+This repo ships a project-scoped template at `.mcp.json.example`. Copy it to
+`.mcp.json` (which is gitignored, since it holds a machine-specific absolute
+path) and replace the placeholder with the absolute path to your built binary:
+
+```bash
+cp .mcp.json.example .mcp.json
+# then edit .mcp.json: set "command" to the absolute path of
+# go-orchestrator/bin/premierpro-mcp on your machine
+```
+
+Or add it directly to your MCP client configuration:
 
 ```json
 {
