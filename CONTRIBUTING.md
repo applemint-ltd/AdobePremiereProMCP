@@ -67,7 +67,7 @@ just test
 just go-run
 
 # Or run directly
-./go-orchestrator/bin/server --transport stdio
+./go-orchestrator/bin/premierpro-mcp --transport stdio
 ```
 
 ### Install CEP Panel

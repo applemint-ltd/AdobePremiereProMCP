@@ -211,7 +211,7 @@ Add to your MCP client configuration:
 {
   "mcpServers": {
     "premiere-pro": {
-      "command": "./go-orchestrator/bin/server",
+      "command": "./go-orchestrator/bin/premierpro-mcp",
       "args": ["--transport", "stdio"]
     }
   }
@@ -225,7 +225,7 @@ Add to your MCP client configuration:
 just go-run
 
 # Or run directly
-./go-orchestrator/bin/server --transport stdio
+./go-orchestrator/bin/premierpro-mcp --transport stdio
 ```
 
 ### One-Click Launchers

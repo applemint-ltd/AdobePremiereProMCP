@@ -56,7 +56,7 @@ MATCH_STRATEGY_EMBEDDING: MatchStrategy
 MATCH_STRATEGY_HYBRID: MatchStrategy
 
 class ParseScriptRequest(_message.Message):
-    __slots__ = ("text", "file_path", "format_hint")
+    __slots__ = ()
     TEXT_FIELD_NUMBER: _ClassVar[int]
     FILE_PATH_FIELD_NUMBER: _ClassVar[int]
     FORMAT_HINT_FIELD_NUMBER: _ClassVar[int]
@@ -66,7 +66,7 @@ class ParseScriptRequest(_message.Message):
     def __init__(self, text: _Optional[str] = ..., file_path: _Optional[str] = ..., format_hint: _Optional[str] = ...) -> None: ...
 
 class ParseScriptResponse(_message.Message):
-    __slots__ = ("segments", "metadata")
+    __slots__ = ()
     SEGMENTS_FIELD_NUMBER: _ClassVar[int]
     METADATA_FIELD_NUMBER: _ClassVar[int]
     segments: _containers.RepeatedCompositeFieldContainer[ScriptSegment]
@@ -74,7 +74,7 @@ class ParseScriptResponse(_message.Message):
     def __init__(self, segments: _Optional[_Iterable[_Union[ScriptSegment, _Mapping]]] = ..., metadata: _Optional[_Union[ScriptMetadata, _Mapping]] = ...) -> None: ...
 
 class ScriptSegment(_message.Message):
-    __slots__ = ("index", "type", "content", "speaker", "scene_description", "visual_direction", "audio_direction", "estimated_duration_seconds", "asset_hints")
+    __slots__ = ()
     INDEX_FIELD_NUMBER: _ClassVar[int]
     TYPE_FIELD_NUMBER: _ClassVar[int]
     CONTENT_FIELD_NUMBER: _ClassVar[int]
@@ -96,7 +96,7 @@ class ScriptSegment(_message.Message):
     def __init__(self, index: _Optional[int] = ..., type: _Optional[_Union[SegmentType, str]] = ..., content: _Optional[str] = ..., speaker: _Optional[str] = ..., scene_description: _Optional[str] = ..., visual_direction: _Optional[str] = ..., audio_direction: _Optional[str] = ..., estimated_duration_seconds: _Optional[float] = ..., asset_hints: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ScriptMetadata(_message.Message):
-    __slots__ = ("title", "format", "estimated_total_duration_seconds", "segment_count")
+    __slots__ = ()
     TITLE_FIELD_NUMBER: _ClassVar[int]
     FORMAT_FIELD_NUMBER: _ClassVar[int]
     ESTIMATED_TOTAL_DURATION_SECONDS_FIELD_NUMBER: _ClassVar[int]
@@ -108,7 +108,7 @@ class ScriptMetadata(_message.Message):
     def __init__(self, title: _Optional[str] = ..., format: _Optional[str] = ..., estimated_total_duration_seconds: _Optional[float] = ..., segment_count: _Optional[int] = ...) -> None: ...
 
 class GenerateEDLRequest(_message.Message):
-    __slots__ = ("segments", "available_assets", "matches", "settings")
+    __slots__ = ()
     SEGMENTS_FIELD_NUMBER: _ClassVar[int]
     AVAILABLE_ASSETS_FIELD_NUMBER: _ClassVar[int]
     MATCHES_FIELD_NUMBER: _ClassVar[int]
@@ -120,7 +120,7 @@ class GenerateEDLRequest(_message.Message):
     def __init__(self, segments: _Optional[_Iterable[_Union[ScriptSegment, _Mapping]]] = ..., available_assets: _Optional[_Iterable[_Union[_common_pb2.Asset, _Mapping]]] = ..., matches: _Optional[_Iterable[_Union[AssetMatch, _Mapping]]] = ..., settings: _Optional[_Union[EDLSettings, _Mapping]] = ...) -> None: ...
 
 class EDLSettings(_message.Message):
-    __slots__ = ("resolution", "frame_rate", "default_transition", "default_transition_duration", "pacing")
+    __slots__ = ()
     RESOLUTION_FIELD_NUMBER: _ClassVar[int]
     FRAME_RATE_FIELD_NUMBER: _ClassVar[int]
     DEFAULT_TRANSITION_FIELD_NUMBER: _ClassVar[int]
@@ -134,7 +134,7 @@ class EDLSettings(_message.Message):
     def __init__(self, resolution: _Optional[_Union[_common_pb2.Resolution, _Mapping]] = ..., frame_rate: _Optional[float] = ..., default_transition: _Optional[str] = ..., default_transition_duration: _Optional[float] = ..., pacing: _Optional[_Union[PacingPreset, str]] = ...) -> None: ...
 
 class GenerateEDLResponse(_message.Message):
-    __slots__ = ("edl", "warnings")
+    __slots__ = ()
     EDL_FIELD_NUMBER: _ClassVar[int]
     WARNINGS_FIELD_NUMBER: _ClassVar[int]
     edl: _common_pb2.EditDecisionList
@@ -142,7 +142,7 @@ class GenerateEDLResponse(_message.Message):
     def __init__(self, edl: _Optional[_Union[_common_pb2.EditDecisionList, _Mapping]] = ..., warnings: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class MatchAssetsRequest(_message.Message):
-    __slots__ = ("segments", "available_assets", "strategy")
+    __slots__ = ()
     SEGMENTS_FIELD_NUMBER: _ClassVar[int]
     AVAILABLE_ASSETS_FIELD_NUMBER: _ClassVar[int]
     STRATEGY_FIELD_NUMBER: _ClassVar[int]
@@ -152,7 +152,7 @@ class MatchAssetsRequest(_message.Message):
     def __init__(self, segments: _Optional[_Iterable[_Union[ScriptSegment, _Mapping]]] = ..., available_assets: _Optional[_Iterable[_Union[_common_pb2.Asset, _Mapping]]] = ..., strategy: _Optional[_Union[MatchStrategy, str]] = ...) -> None: ...
 
 class MatchAssetsResponse(_message.Message):
-    __slots__ = ("matches", "unmatched")
+    __slots__ = ()
     MATCHES_FIELD_NUMBER: _ClassVar[int]
     UNMATCHED_FIELD_NUMBER: _ClassVar[int]
     matches: _containers.RepeatedCompositeFieldContainer[AssetMatch]
@@ -160,7 +160,7 @@ class MatchAssetsResponse(_message.Message):
     def __init__(self, matches: _Optional[_Iterable[_Union[AssetMatch, _Mapping]]] = ..., unmatched: _Optional[_Iterable[_Union[UnmatchedSegment, _Mapping]]] = ...) -> None: ...
 
 class AssetMatch(_message.Message):
-    __slots__ = ("segment_index", "asset_id", "confidence", "reasoning", "suggested_range")
+    __slots__ = ()
     SEGMENT_INDEX_FIELD_NUMBER: _ClassVar[int]
     ASSET_ID_FIELD_NUMBER: _ClassVar[int]
     CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
@@ -174,7 +174,7 @@ class AssetMatch(_message.Message):
     def __init__(self, segment_index: _Optional[int] = ..., asset_id: _Optional[str] = ..., confidence: _Optional[float] = ..., reasoning: _Optional[str] = ..., suggested_range: _Optional[_Union[_common_pb2.TimeRange, _Mapping]] = ...) -> None: ...
 
 class UnmatchedSegment(_message.Message):
-    __slots__ = ("segment_index", "reason", "suggestions")
+    __slots__ = ()
     SEGMENT_INDEX_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
     SUGGESTIONS_FIELD_NUMBER: _ClassVar[int]
@@ -184,7 +184,7 @@ class UnmatchedSegment(_message.Message):
     def __init__(self, segment_index: _Optional[int] = ..., reason: _Optional[str] = ..., suggestions: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class AnalyzePacingRequest(_message.Message):
-    __slots__ = ("edl", "target_mood")
+    __slots__ = ()
     EDL_FIELD_NUMBER: _ClassVar[int]
     TARGET_MOOD_FIELD_NUMBER: _ClassVar[int]
     edl: _common_pb2.EditDecisionList
@@ -192,7 +192,7 @@ class AnalyzePacingRequest(_message.Message):
     def __init__(self, edl: _Optional[_Union[_common_pb2.EditDecisionList, _Mapping]] = ..., target_mood: _Optional[str] = ...) -> None: ...
 
 class AnalyzePacingResponse(_message.Message):
-    __slots__ = ("adjustments", "current_avg_clip_duration", "suggested_avg_clip_duration")
+    __slots__ = ()
     ADJUSTMENTS_FIELD_NUMBER: _ClassVar[int]
     CURRENT_AVG_CLIP_DURATION_FIELD_NUMBER: _ClassVar[int]
     SUGGESTED_AVG_CLIP_DURATION_FIELD_NUMBER: _ClassVar[int]
@@ -202,7 +202,7 @@ class AnalyzePacingResponse(_message.Message):
     def __init__(self, adjustments: _Optional[_Iterable[_Union[PacingAdjustment, _Mapping]]] = ..., current_avg_clip_duration: _Optional[float] = ..., suggested_avg_clip_duration: _Optional[float] = ...) -> None: ...
 
 class PacingAdjustment(_message.Message):
-    __slots__ = ("edl_entry_index", "current_duration", "suggested_duration", "reason")
+    __slots__ = ()
     EDL_ENTRY_INDEX_FIELD_NUMBER: _ClassVar[int]
     CURRENT_DURATION_FIELD_NUMBER: _ClassVar[int]
     SUGGESTED_DURATION_FIELD_NUMBER: _ClassVar[int]

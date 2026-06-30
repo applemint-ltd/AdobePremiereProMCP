@@ -38,6 +38,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# gen/python holds the gitignored, generated protobuf stubs (the `premierpro`
+# package). It is not installed into the venv; the runtime adds it via
+# PYTHONPATH (see scripts/start-all.sh), so do the same for the test runner.
+# Paths are resolved relative to this file's directory (the rootdir).
+pythonpath = ["../gen/python", "src"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

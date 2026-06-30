@@ -142,7 +142,7 @@ just build
 
 The `just build` command runs the following in sequence:
 1. `buf generate` -- generates protobuf stubs for Go, Rust, Python, and TypeScript
-2. `go build` -- compiles the Go orchestrator to `go-orchestrator/bin/server`
+2. `go build` -- compiles the Go orchestrator to `go-orchestrator/bin/premierpro-mcp`
 3. `cargo build --release` -- compiles the Rust media engine
 4. `npm run build` -- bundles the TypeScript bridge
 5. `npm run build` -- bundles the CEP panel
@@ -283,7 +283,7 @@ To use PremierPro MCP as a tool server for Claude Code, Cursor, or any MCP-compa
 {
   "mcpServers": {
     "premiere-pro": {
-      "command": "/path/to/AdobePremiereProMCP/go-orchestrator/bin/server",
+      "command": "/path/to/AdobePremiereProMCP/go-orchestrator/bin/premierpro-mcp",
       "args": ["--transport", "stdio"]
     }
   }
@@ -292,12 +292,12 @@ To use PremierPro MCP as a tool server for Claude Code, Cursor, or any MCP-compa
 
 Replace `/path/to/AdobePremiereProMCP` with the actual path to your clone of the repository.
 
-The binary name is `server` (built by `just go-build`) or `premierpro-mcp` (built by the launcher scripts). Either binary works -- they are built from the same source (`go-orchestrator/cmd/server/main.go`).
+The binary is `go-orchestrator/bin/premierpro-mcp`, built from `go-orchestrator/cmd/server/main.go` by both `just go-build` and the launcher scripts.
 
 **SSE transport** is also available if your client supports it:
 
 ```bash
-./go-orchestrator/bin/server --transport sse --port 8080
+./go-orchestrator/bin/premierpro-mcp --transport sse --port 8080
 ```
 
 This starts an HTTP server at `http://localhost:8080` with Server-Sent Events for the MCP protocol.
@@ -646,7 +646,7 @@ All build commands use `just` as the unified build system. Run `just` with no ar
 
 | Command | Description |
 |---|---|
-| `just go-build` | Build the Go orchestrator to `go-orchestrator/bin/server` |
+| `just go-build` | Build the Go orchestrator to `go-orchestrator/bin/premierpro-mcp` |
 | `just go-run` | Run the Go orchestrator directly |
 | `just go-test` | Run Go tests |
 | `just go-lint` | Lint Go code with `golangci-lint` |

@@ -46,8 +46,8 @@ mkdir -p "$LOG_DIR"
 # --- Start Rust Media Engine (port 50052) ---
 echo -e "${CYAN}[1/3] Starting Rust media engine on port 50052...${NC}"
 cd "$PROJECT_ROOT/rust-engine"
-if [ -f "target/release/rust-engine" ]; then
-    ./target/release/rust-engine --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
+if [ -f "target/release/premierpro-media-engine" ]; then
+    ./target/release/premierpro-media-engine --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
 else
     cargo run --release -- --port 50052 > "$LOG_DIR/rust-engine.log" 2>&1 &
 fi
@@ -58,7 +58,9 @@ echo "  PID: $RUST_PID"
 # --- Start Python Intelligence (port 50053) ---
 echo -e "${CYAN}[2/3] Starting Python intelligence on port 50053...${NC}"
 cd "$PROJECT_ROOT/python-intelligence"
-PYTHONPATH="$PROJECT_ROOT/gen/python:." python src/main.py --port 50053 > "$LOG_DIR/python-intelligence.log" 2>&1 &
+# Run via uv so the project's virtualenv (and its deps) are used. gen/python
+# holds the gitignored generated protobuf stubs, added to PYTHONPATH.
+PYTHONPATH="$PROJECT_ROOT/gen/python:." uv run python src/main.py --port 50053 > "$LOG_DIR/python-intelligence.log" 2>&1 &
 PYTHON_PID=$!
 echo "python-intelligence:$PYTHON_PID:50053" >> "$PID_FILE"
 echo "  PID: $PYTHON_PID"

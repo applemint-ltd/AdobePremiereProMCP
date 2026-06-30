@@ -9,6 +9,9 @@ default:
 proto:
     @echo "Generating protobuf stubs..."
     buf generate proto/definitions
+    @# buf.gen.yaml uses `clean: true`, which wipes gen/go including the
+    @# hand-maintained go.mod/go.sum for the gen/go module. Restore them.
+    git checkout -- gen/go/go.mod gen/go/go.sum
 
 # Lint proto definitions
 proto-lint:
@@ -18,7 +21,7 @@ proto-lint:
 
 # Build the Go orchestrator
 go-build:
-    cd go-orchestrator && go build -o bin/server ./cmd/server
+    cd go-orchestrator && go build -o bin/premierpro-mcp ./cmd/server
 
 # Run the Go orchestrator
 go-run:
@@ -48,17 +51,19 @@ rust-lint:
 
 # ─── Python Intelligence ───
 
-# Install Python dependencies
+# Install Python dependencies (uv manages the venv + Python 3.12; dev deps live
+# in [dependency-groups], which `uv sync` installs by default but `pip install
+# -e ".[dev]"` does not).
 py-install:
-    cd python-intelligence && pip install -e ".[dev]"
+    cd python-intelligence && uv sync
 
 # Run Python tests
 py-test:
-    cd python-intelligence && pytest tests/
+    cd python-intelligence && uv run pytest tests/
 
 # Lint Python code
 py-lint:
-    cd python-intelligence && ruff check src/ && mypy src/
+    cd python-intelligence && uv run ruff check src/ && uv run mypy src/
 
 # ─── TypeScript Bridge ───
 
@@ -80,9 +85,10 @@ ts-lint:
 
 # ─── CEP Panel ───
 
-# Build the CEP panel
+# Build the CEP panel (plain JS — no compile step; this just installs the `ws`
+# runtime dependency. CSInterface.js is vendored in src/.)
 cep-build:
-    cd cep-panel && npm run build
+    cd cep-panel && npm install
 
 # Package the CEP panel for installation
 cep-package:

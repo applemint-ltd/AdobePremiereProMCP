@@ -9,23 +9,27 @@ managed:
 
 plugins:
   # ──── Go ────
-  - remote: buf.build/protocolbuffers/go
+  # Pinned to match gen/go/go.mod (google.golang.org/protobuf v1.36.11).
+  - remote: buf.build/protocolbuffers/go:v1.36.11
     out: gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc/go
+  - remote: buf.build/grpc/go:v1.6.2
     out: gen/go
     opt: paths=source_relative
 
   # ──── Python ────
-  - remote: buf.build/protocolbuffers/python
+  # Pinned to the protobuf 6.33.x line: grpcio-tools caps the runtime at
+  # protobuf <7, so the unpinned (latest) plugin emitted 7.35.1 gencode that
+  # the 6.33.6 runtime refuses to load. 33.6 ⇒ gencode header "6.33.6".
+  - remote: buf.build/protocolbuffers/python:v33.0
     out: gen/python
-  - remote: buf.build/grpc/python
+  - remote: buf.build/grpc/python:v1.81.1
     out: gen/python
-  - remote: buf.build/protocolbuffers/pyi
+  - remote: buf.build/protocolbuffers/pyi:v33.0
     out: gen/python
 
   # ──── TypeScript (ts-proto for nice-grpc) ────
-  - remote: buf.build/community/stephenh-ts-proto
+  - remote: buf.build/community/stephenh-ts-proto:v2.11.8
     out: gen/ts
     opt:
       - outputServices=nice-grpc

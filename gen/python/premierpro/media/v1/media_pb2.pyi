@@ -8,7 +8,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class ScanAssetsRequest(_message.Message):
-    __slots__ = ("directory", "recursive", "extensions")
+    __slots__ = ()
     DIRECTORY_FIELD_NUMBER: _ClassVar[int]
     RECURSIVE_FIELD_NUMBER: _ClassVar[int]
     EXTENSIONS_FIELD_NUMBER: _ClassVar[int]
@@ -18,7 +18,7 @@ class ScanAssetsRequest(_message.Message):
     def __init__(self, directory: _Optional[str] = ..., recursive: _Optional[bool] = ..., extensions: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ScanAssetsResponse(_message.Message):
-    __slots__ = ("assets", "total_files_scanned", "media_files_found", "scan_duration_seconds")
+    __slots__ = ()
     ASSETS_FIELD_NUMBER: _ClassVar[int]
     TOTAL_FILES_SCANNED_FIELD_NUMBER: _ClassVar[int]
     MEDIA_FILES_FOUND_FIELD_NUMBER: _ClassVar[int]
@@ -30,19 +30,19 @@ class ScanAssetsResponse(_message.Message):
     def __init__(self, assets: _Optional[_Iterable[_Union[_common_pb2.Asset, _Mapping]]] = ..., total_files_scanned: _Optional[int] = ..., media_files_found: _Optional[int] = ..., scan_duration_seconds: _Optional[float] = ...) -> None: ...
 
 class ProbeMediaRequest(_message.Message):
-    __slots__ = ("file_path",)
+    __slots__ = ()
     FILE_PATH_FIELD_NUMBER: _ClassVar[int]
     file_path: str
     def __init__(self, file_path: _Optional[str] = ...) -> None: ...
 
 class ProbeMediaResponse(_message.Message):
-    __slots__ = ("asset",)
+    __slots__ = ()
     ASSET_FIELD_NUMBER: _ClassVar[int]
     asset: _common_pb2.Asset
     def __init__(self, asset: _Optional[_Union[_common_pb2.Asset, _Mapping]] = ...) -> None: ...
 
 class GenerateThumbnailRequest(_message.Message):
-    __slots__ = ("file_path", "timestamp", "output_size", "output_format")
+    __slots__ = ()
     FILE_PATH_FIELD_NUMBER: _ClassVar[int]
     TIMESTAMP_FIELD_NUMBER: _ClassVar[int]
     OUTPUT_SIZE_FIELD_NUMBER: _ClassVar[int]
@@ -54,7 +54,7 @@ class GenerateThumbnailRequest(_message.Message):
     def __init__(self, file_path: _Optional[str] = ..., timestamp: _Optional[_Union[_common_pb2.Timecode, _Mapping]] = ..., output_size: _Optional[_Union[_common_pb2.Resolution, _Mapping]] = ..., output_format: _Optional[str] = ...) -> None: ...
 
 class GenerateThumbnailResponse(_message.Message):
-    __slots__ = ("thumbnail_data", "output_path", "actual_size")
+    __slots__ = ()
     THUMBNAIL_DATA_FIELD_NUMBER: _ClassVar[int]
     OUTPUT_PATH_FIELD_NUMBER: _ClassVar[int]
     ACTUAL_SIZE_FIELD_NUMBER: _ClassVar[int]
@@ -64,7 +64,7 @@ class GenerateThumbnailResponse(_message.Message):
     def __init__(self, thumbnail_data: _Optional[bytes] = ..., output_path: _Optional[str] = ..., actual_size: _Optional[_Union[_common_pb2.Resolution, _Mapping]] = ...) -> None: ...
 
 class AnalyzeWaveformRequest(_message.Message):
-    __slots__ = ("file_path", "audio_track", "silence_threshold_db", "min_silence_duration_seconds")
+    __slots__ = ()
     FILE_PATH_FIELD_NUMBER: _ClassVar[int]
     AUDIO_TRACK_FIELD_NUMBER: _ClassVar[int]
     SILENCE_THRESHOLD_DB_FIELD_NUMBER: _ClassVar[int]
@@ -76,7 +76,7 @@ class AnalyzeWaveformRequest(_message.Message):
     def __init__(self, file_path: _Optional[str] = ..., audio_track: _Optional[int] = ..., silence_threshold_db: _Optional[float] = ..., min_silence_duration_seconds: _Optional[float] = ...) -> None: ...
 
 class AnalyzeWaveformResponse(_message.Message):
-    __slots__ = ("silence_regions", "peak_db", "rms_db", "duration_seconds", "waveform_samples")
+    __slots__ = ()
     SILENCE_REGIONS_FIELD_NUMBER: _ClassVar[int]
     PEAK_DB_FIELD_NUMBER: _ClassVar[int]
     RMS_DB_FIELD_NUMBER: _ClassVar[int]
@@ -90,7 +90,7 @@ class AnalyzeWaveformResponse(_message.Message):
     def __init__(self, silence_regions: _Optional[_Iterable[_Union[SilenceRegion, _Mapping]]] = ..., peak_db: _Optional[float] = ..., rms_db: _Optional[float] = ..., duration_seconds: _Optional[float] = ..., waveform_samples: _Optional[_Iterable[float]] = ...) -> None: ...
 
 class SilenceRegion(_message.Message):
-    __slots__ = ("start_seconds", "end_seconds", "avg_db")
+    __slots__ = ()
     START_SECONDS_FIELD_NUMBER: _ClassVar[int]
     END_SECONDS_FIELD_NUMBER: _ClassVar[int]
     AVG_DB_FIELD_NUMBER: _ClassVar[int]
@@ -100,7 +100,7 @@ class SilenceRegion(_message.Message):
     def __init__(self, start_seconds: _Optional[float] = ..., end_seconds: _Optional[float] = ..., avg_db: _Optional[float] = ...) -> None: ...
 
 class DetectScenesRequest(_message.Message):
-    __slots__ = ("file_path", "threshold")
+    __slots__ = ()
     FILE_PATH_FIELD_NUMBER: _ClassVar[int]
     THRESHOLD_FIELD_NUMBER: _ClassVar[int]
     file_path: str
@@ -108,13 +108,13 @@ class DetectScenesRequest(_message.Message):
     def __init__(self, file_path: _Optional[str] = ..., threshold: _Optional[float] = ...) -> None: ...
 
 class DetectScenesResponse(_message.Message):
-    __slots__ = ("scenes",)
+    __slots__ = ()
     SCENES_FIELD_NUMBER: _ClassVar[int]
     scenes: _containers.RepeatedCompositeFieldContainer[SceneChange]
     def __init__(self, scenes: _Optional[_Iterable[_Union[SceneChange, _Mapping]]] = ...) -> None: ...
 
 class SceneChange(_message.Message):
-    __slots__ = ("timecode", "confidence")
+    __slots__ = ()
     TIMECODE_FIELD_NUMBER: _ClassVar[int]
     CONFIDENCE_FIELD_NUMBER: _ClassVar[int]
     timecode: _common_pb2.Timecode

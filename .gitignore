@@ -63,3 +63,10 @@ Thumbs.db
 tmp/
 .cache/
 go-orchestrator/cli
+
+# ─── Runtime artifacts ───
+scripts/.pids
+
+# ─── Python bytecode (anywhere, incl. generated gen/) ───
+**/__pycache__/
+**/*.pyc
