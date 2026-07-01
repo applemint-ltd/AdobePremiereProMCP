@@ -283,10 +283,10 @@ type Orchestrator interface {
 	SetMOGRTProperty(ctx context.Context, trackIndex, clipIndex int, propertyName string, value string) (*GenericResult, error)
 	AddTitle(ctx context.Context, text string, trackIndex int, startTime, duration float64, styleJSON string) (*GenericResult, error)
 	AddLowerThird(ctx context.Context, name, title string, trackIndex int, startTime, duration float64) (*GenericResult, error)
-	CreateCaptionTrack(ctx context.Context, format string) (*GenericResult, error)
+	CreateCaptionTrack(ctx context.Context, filePath string, startTime float64, format string) (*GenericResult, error)
 	ImportCaptions(ctx context.Context, filePath, format string) (*GenericResult, error)
 	GetCaptions(ctx context.Context, trackIndex int) (*GenericResult, error)
-	AddCaption(ctx context.Context, trackIndex int, startTime, endTime float64, text string) (*GenericResult, error)
+	AddCaption(ctx context.Context, startTime, endTime float64, text, format string) (*GenericResult, error)
 	EditCaption(ctx context.Context, trackIndex, captionIndex int, text string) (*GenericResult, error)
 	DeleteCaption(ctx context.Context, trackIndex, captionIndex int) (*GenericResult, error)
 	ExportCaptions(ctx context.Context, outputPath, format string) (*GenericResult, error)
@@ -1028,7 +1028,8 @@ type Orchestrator interface {
 	AutoCorrectAllClips(ctx context.Context, trackIndex int) (*GenericResult, error)
 
 	// --- Text Workflow ---
-	AddSubtitlesFromSRT(ctx context.Context, srtPath string, trackIndex int) (*GenericResult, error)
+	AddSubtitlesFromSRT(ctx context.Context, srtPath string, startTime float64, format string) (*GenericResult, error)
+	AddTextLayer(ctx context.Context, params *TextLayerParams) (*GenericResult, error)
 	AddEndCredits(ctx context.Context, creditsJSON string, trackIndex int, scrollDuration float64, style string) (*GenericResult, error)
 	AddChapterMarkers(ctx context.Context, chaptersJSON string) (*GenericResult, error)
 	GenerateChaptersFromMarkers(ctx context.Context, outputPath string) (*GenericResult, error)

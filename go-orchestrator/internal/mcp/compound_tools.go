@@ -452,13 +452,17 @@ func registerCompoundTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 	// 15. premiere_add_subtitles_from_srt
 	s.AddTool(
 		gomcp.NewTool("premiere_add_subtitles_from_srt",
-			gomcp.WithDescription("Import an SRT subtitle file and place subtitles on the timeline. Parses SRT format and creates caption entries."),
+			gomcp.WithDescription("Import an SRT subtitle file and create a native, editable text-based caption track on the timeline (visible/editable in the Captions panel). Uses Premiere's own caption import — subtitle text is never rendered to an image."),
 			gomcp.WithString("srt_path",
 				gomcp.Required(),
 				gomcp.Description("Absolute path to the SRT subtitle file"),
 			),
-			gomcp.WithNumber("track_index",
-				gomcp.Description("Zero-based track index for captions (default: 0)"),
+			gomcp.WithNumber("start_time_seconds",
+				gomcp.Description("Where the caption track starts on the timeline, in seconds (default: 0)"),
+			),
+			gomcp.WithString("format",
+				gomcp.Description("Caption format: 'Subtitle' (default), 'Closed'/'608', or '708'"),
+				gomcp.Enum("Subtitle", "Closed", "608", "708"),
 			),
 		),
 		compoundH(logger, "add_subtitles_from_srt", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
@@ -466,7 +470,51 @@ func registerCompoundTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 			if srtPath == "" {
 				return gomcp.NewToolResultError("parameter 'srt_path' is required"), nil
 			}
-			result, err := orch.AddSubtitlesFromSRT(ctx, srtPath, gomcp.ParseInt(req, "track_index", 0))
+			result, err := orch.AddSubtitlesFromSRT(ctx, srtPath, gomcp.ParseFloat64(req, "start_time_seconds", 0), gomcp.ParseString(req, "format", "Subtitle"))
+			if err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
+			}
+			return toolResultJSON(result)
+		}),
+	)
+
+	// 15b. premiere_add_text_layer
+	s.AddTool(
+		gomcp.NewTool("premiere_add_text_layer",
+			gomcp.WithDescription("Add a text layer clip to the timeline, for on-screen text/titles in ad creatives. Premiere Pro 2026's ExtendScript DOM cannot render scripted text into a native Essential Graphics Text/Vertical Text layer (a confirmed Adobe rendering bug — the Source Text data model updates, but the compositor never repaints it, even under a forced re-render). As a working alternative, this renders the text to a transparent PNG (macOS only) with the requested font/size/color/position and places it as a clip. The clip is NOT an editable native text layer — to change the text, call this tool again with new text rather than double-clicking the clip in Premiere."),
+			gomcp.WithString("text", gomcp.Required(), gomcp.Description("Text content to render")),
+			gomcp.WithString("orientation", gomcp.Description("'horizontal' (default) or 'vertical' (one character per line, centered)"), gomcp.Enum("horizontal", "vertical")),
+			gomcp.WithString("font_name", gomcp.Description("Font PostScript name, e.g. 'Helvetica-Bold', 'Impact' (default: 'Helvetica-Bold')")),
+			gomcp.WithNumber("font_size", gomcp.Description("Font size in pixels at the given canvas resolution (default: 96)")),
+			gomcp.WithString("color", gomcp.Description("Text fill color as hex, e.g. '#FFFFFF' (default: white)")),
+			gomcp.WithNumber("x", gomcp.Description("Normalized horizontal anchor 0-1, 0.5 = centered (default: 0.5)")),
+			gomcp.WithNumber("y", gomcp.Description("Normalized vertical anchor 0-1, 0.5 = centered (default: 0.5)")),
+			gomcp.WithNumber("width", gomcp.Description("Canvas width in pixels, should match the sequence resolution (default: 1920)")),
+			gomcp.WithNumber("height", gomcp.Description("Canvas height in pixels, should match the sequence resolution (default: 1080)")),
+			gomcp.WithNumber("track_index", gomcp.Description("Zero-based video track index to place the clip on (default: 0)")),
+			gomcp.WithNumber("start_time_seconds", gomcp.Description("Start position on the timeline in seconds (default: 0)")),
+			gomcp.WithNumber("duration_seconds", gomcp.Description("How long the text is visible in seconds (default: 5.0)")),
+		),
+		compoundH(logger, "add_text_layer", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+			text := gomcp.ParseString(req, "text", "")
+			if text == "" {
+				return gomcp.NewToolResultError("parameter 'text' is required"), nil
+			}
+			params := &TextLayerParams{
+				Text:        text,
+				Orientation: gomcp.ParseString(req, "orientation", "horizontal"),
+				FontName:    gomcp.ParseString(req, "font_name", "Helvetica-Bold"),
+				FontSize:    gomcp.ParseFloat64(req, "font_size", 96),
+				Color:       gomcp.ParseString(req, "color", "#FFFFFF"),
+				X:           gomcp.ParseFloat64(req, "x", 0.5),
+				Y:           gomcp.ParseFloat64(req, "y", 0.5),
+				Width:       gomcp.ParseInt(req, "width", 1920),
+				Height:      gomcp.ParseInt(req, "height", 1080),
+				TrackIndex:  gomcp.ParseInt(req, "track_index", 0),
+				StartTime:   gomcp.ParseFloat64(req, "start_time_seconds", 0),
+				Duration:    gomcp.ParseFloat64(req, "duration_seconds", 5.0),
+			}
+			result, err := orch.AddTextLayer(ctx, params)
 			if err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 			}

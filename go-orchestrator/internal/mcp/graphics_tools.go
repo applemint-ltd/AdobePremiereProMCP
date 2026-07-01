@@ -159,12 +159,18 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_create_caption_track",
-			gomcp.WithDescription("Create a new caption track on the active sequence."),
+			gomcp.WithDescription("Create a native, editable text-based caption track on the active sequence from an imported caption source file (.srt/.vtt). This is the only scripted way to place real caption text in Premiere — it is NOT rendered as an image."),
+			gomcp.WithString("file_path", gomcp.Required(), gomcp.Description("Absolute path to the caption source file (.srt or .vtt)")),
+			gomcp.WithNumber("start_time_seconds", gomcp.Description("Where the caption track starts on the timeline, in seconds (default: 0)")),
 			gomcp.WithString("format", gomcp.Description("Caption format: 'Subtitle' (default), 'Closed'/'608', or '708'"), gomcp.Enum("Subtitle", "Closed", "608", "708")),
 		),
 		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 			logger.Debug("handling premiere_create_caption_track")
-			result, err := orch.CreateCaptionTrack(ctx, gomcp.ParseString(req, "format", "Subtitle"))
+			filePath := gomcp.ParseString(req, "file_path", "")
+			if filePath == "" {
+				return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+			}
+			result, err := orch.CreateCaptionTrack(ctx, filePath, gomcp.ParseFloat64(req, "start_time_seconds", 0), gomcp.ParseString(req, "format", "Subtitle"))
 			if err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("failed to create caption track: %v", err)), nil
 			}
@@ -194,7 +200,7 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_get_captions",
-			gomcp.WithDescription("Get all captions with text and timecodes from a caption track."),
+			gomcp.WithDescription("Get all captions with text and timecodes from a caption track. Not supported on Premiere Pro versions where the ExtendScript DOM exposes no caption read-back API — check the returned error."),
 			gomcp.WithNumber("track_index", gomcp.Description("Zero-based caption track index (default: 0)")),
 		),
 		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
@@ -209,11 +215,11 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_add_caption",
-			gomcp.WithDescription("Add a single caption to a caption track."),
-			gomcp.WithNumber("track_index", gomcp.Description("Zero-based caption track index (default: 0)")),
+			gomcp.WithDescription("Add a single caption as a native, editable text-based caption track (not a rendered image). Premiere's ExtendScript DOM has no API to append to an existing caption track, so each call creates its own track."),
 			gomcp.WithNumber("start_time", gomcp.Required(), gomcp.Description("Start time in seconds")),
 			gomcp.WithNumber("end_time", gomcp.Required(), gomcp.Description("End time in seconds")),
 			gomcp.WithString("text", gomcp.Required(), gomcp.Description("Caption text content")),
+			gomcp.WithString("format", gomcp.Description("Caption format: 'Subtitle' (default), 'Closed'/'608', or '708'"), gomcp.Enum("Subtitle", "Closed", "608", "708")),
 		),
 		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 			logger.Debug("handling premiere_add_caption")
@@ -221,7 +227,7 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 			if text == "" {
 				return gomcp.NewToolResultError("parameter 'text' is required"), nil
 			}
-			result, err := orch.AddCaption(ctx, gomcp.ParseInt(req, "track_index", 0), gomcp.ParseFloat64(req, "start_time", 0), gomcp.ParseFloat64(req, "end_time", 3), text)
+			result, err := orch.AddCaption(ctx, gomcp.ParseFloat64(req, "start_time", 0), gomcp.ParseFloat64(req, "end_time", 3), text, gomcp.ParseString(req, "format", "Subtitle"))
 			if err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("failed to add caption: %v", err)), nil
 			}
@@ -231,7 +237,7 @@ func registerGraphicsTools(s *server.MCPServer, orch Orchestrator, logger *zap.L
 
 	s.AddTool(
 		gomcp.NewTool("premiere_edit_caption",
-			gomcp.WithDescription("Edit the text of an existing caption."),
+			gomcp.WithDescription("Edit the text of an existing caption. Not supported on Premiere Pro versions where the ExtendScript DOM exposes no caption read-back API — if it fails, re-run premiere_create_caption_track/premiere_add_subtitles_from_srt with an updated source file instead of rendering text to an image."),
 			gomcp.WithNumber("track_index", gomcp.Description("Zero-based caption track index (default: 0)")),
 			gomcp.WithNumber("caption_index", gomcp.Required(), gomcp.Description("Zero-based caption index on the track")),
 			gomcp.WithString("text", gomcp.Required(), gomcp.Description("New caption text")),

@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
+	"math"
+	"os"
 )
 
 // ---------------------------------------------------------------------------
@@ -103,9 +104,11 @@ func (e *Engine) AddLowerThird(ctx context.Context, name, title string, trackInd
 // Captions & Subtitles
 // ---------------------------------------------------------------------------
 
-func (e *Engine) CreateCaptionTrack(ctx context.Context, format string) (*GenericResult, error) {
+func (e *Engine) CreateCaptionTrack(ctx context.Context, filePath string, startTime float64, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"format": format,
+		"filePath":  filePath,
+		"startTime": startTime,
+		"format":    format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "createCaptionTrack", string(argsJSON))
 	if err != nil {
@@ -137,14 +140,57 @@ func (e *Engine) GetCaptions(ctx context.Context, trackIndex int) (*GenericResul
 	return &GenericResult{Status: "success", Message: result}, nil
 }
 
-func (e *Engine) AddCaption(ctx context.Context, trackIndex int, startTime, endTime float64, text string) (*GenericResult, error) {
+// srtTimestamp formats seconds as an SRT "HH:MM:SS,mmm" timestamp.
+func srtTimestamp(sec float64) string {
+	if sec < 0 {
+		sec = 0
+	}
+	h := int(sec) / 3600
+	m := (int(sec) % 3600) / 60
+	s := int(sec) % 60
+	ms := int(math.Round((sec - math.Floor(sec)) * 1000))
+	return fmt.Sprintf("%02d:%02d:%02d,%03d", h, m, s, ms)
+}
+
+// AddCaption creates a native, editable text-based caption track for a
+// single caption. Premiere's ExtendScript DOM can only create a caption
+// track from an imported caption source file (.srt/.vtt) — there is no API
+// to append a caption to an existing track. It also cannot reliably import a
+// file that ExtendScript's own File object just wrote (a same-app
+// write/import visibility race observed live), so the one-entry SRT is
+// generated and written here, in the Go process, before handing the path to
+// createCaptionTrack.
+func (e *Engine) AddCaption(ctx context.Context, startTime, endTime float64, text, format string) (*GenericResult, error) {
+	if endTime <= startTime {
+		endTime = startTime + 3.0
+	}
+	srt := fmt.Sprintf("1\n%s --> %s\n%s\n", srtTimestamp(startTime), srtTimestamp(endTime), text)
+
+	tmpFile, err := os.CreateTemp("", "premiere_caption_*.srt")
+	if err != nil {
+		return nil, fmt.Errorf("AddCaption: create temp SRT: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_, writeErr := tmpFile.WriteString(srt)
+	closeErr := tmpFile.Close()
+	if writeErr != nil {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("AddCaption: write temp SRT: %w", writeErr)
+	}
+	if closeErr != nil {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("AddCaption: close temp SRT: %w", closeErr)
+	}
+	// Deliberately not removed: the created caption track's ProjectItem
+	// keeps pointing at this path as its media source, so deleting it would
+	// leave the caption source offline.
+
 	argsJSON, _ := json.Marshal(map[string]any{
-		"trackIndex": trackIndex,
-		"startTime": startTime,
-		"endTime": endTime,
-		"text": text,
+		"filePath":  tmpPath,
+		"startTime": 0,
+		"format":    format,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "addCaption", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "createCaptionTrack", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("AddCaption: %w", err)
 	}
