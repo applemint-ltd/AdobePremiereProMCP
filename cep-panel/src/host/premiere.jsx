@@ -654,6 +654,53 @@ function addText(text, trackIndex, startTime, duration) {
 }
 
 // ---------------------------------------------------------------------------
+// addTextLayerImage(filePath, trackIndex, startTime, duration)
+//
+// Places a pre-rendered transparent text PNG as a video clip. This exists
+// because Premiere Pro 2026's ExtendScript DOM cannot make a scripted
+// Essential Graphics "Source Text" edit actually render (confirmed live: the
+// data model updates and reads back correctly, but the compositor never
+// repaints the glyphs — not even under a forced fresh export). Until that is
+// fixed, this is the only way to get exact, arbitrary on-screen text; the
+// text itself is baked into filePath by the Go orchestrator (AppKit/Swift)
+// before this function is called. It is NOT an editable native text layer.
+// ---------------------------------------------------------------------------
+function addTextLayerImage(filePath, trackIndex, startTime, duration) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+        if (!filePath || filePath === "") return _err("filePath is required");
+        var imgFile = new File(filePath);
+        if (!imgFile.exists) return _err("Text layer image not found: " + filePath);
+        trackIndex = parseInt(trackIndex, 10) || 0;
+        startTime = parseFloat(startTime) || 0;
+        duration = parseFloat(duration) || 5.0;
+        if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
+        var track = seq.videoTracks[trackIndex];
+
+        var item = _importProjectItemForPath(filePath);
+        if (!item) return _err("Failed to import text layer image: " + filePath);
+
+        var startTimeObj = _secondsToTime(startTime);
+        track.overwriteClip(item, startTimeObj);
+        var clip = null;
+        for (var i = track.clips.numItems - 1; i >= 0; i--) {
+            var c = track.clips[i];
+            if (Math.abs(_timeToSeconds(c.start) - startTime) < 0.05) { clip = c; break; }
+        }
+        if (!clip) return _err("Placed the text layer image but could not locate the resulting clip to set its duration");
+        clip.end = _secondsToTime(startTime + duration);
+
+        return _ok({
+            filePath: filePath, trackIndex: trackIndex, startTime: startTime, duration: duration,
+            placed: true,
+            note: "Baked-image text layer, not an editable native Text/Vertical Text layer — Premiere Pro 2026 cannot render scripted text into one. To change the text, call this again with new text."
+        });
+    } catch (e) { return _err("addTextLayerImage failed: " + e.message); }
+}
+
+// ---------------------------------------------------------------------------
 // Audio helpers
 // ---------------------------------------------------------------------------
 function _findVolumeParam(clip) { if (!clip.components) return null; for (var ci = 0; ci < clip.components.numItems; ci++) { var c = clip.components[ci]; if (c.displayName === "Volume" || c.matchName === "audioGain") { var p = c.properties.getParamForDisplayName("Level"); if (!p && c.properties.numItems > 0) p = c.properties[0]; return p; } } return null; }
@@ -5409,19 +5456,60 @@ function addLowerThird(name, title, trackIndex, startTime, duration) {
 // Captions & Subtitles
 // ===========================================================================
 
-function createCaptionTrack(format) {
+// Native captions are created from an imported caption source file (.srt/.vtt)
+// via seq.createCaptionTrack(projectItem, startAtTimeSeconds, captionFormat) —
+// the only scripted path to real, editable (Captions panel) text captions in
+// this Premiere Pro version. seq.captionTracks / ct.addCaption do NOT exist
+// here (confirmed live 2026-07-01), so anything routed through those is a
+// silent no-op. addCaption/addSubtitlesFromSRT/createCaptionTrack below all go
+// through this path — never fall back to rendering caption/subtitle text into
+// an image; if this fails, surface the error instead.
+function _captionFormatConst(format) {
+    var f = format || "Subtitle";
+    if (typeof Sequence !== "undefined" && Sequence.CAPTION_FORMAT_SUBTITLE !== undefined) {
+        if (f === "Closed" || f === "608") return Sequence.CAPTION_FORMAT_608;
+        if (f === "708") return Sequence.CAPTION_FORMAT_708;
+        if (f === "Teletext") return Sequence.CAPTION_FORMAT_TELETEXT;
+        if (f === "EBU") return Sequence.CAPTION_FORMAT_OPEN_EBU;
+        if (f === "OP42") return Sequence.CAPTION_FORMAT_OP42;
+        if (f === "OP47") return Sequence.CAPTION_FORMAT_OP47;
+        return Sequence.CAPTION_FORMAT_SUBTITLE;
+    }
+    if (f === "Closed" || f === "608") return 1;
+    if (f === "708") return 2;
+    if (f === "Teletext") return 3;
+    if (f === "EBU") return 65539;
+    if (f === "OP42") return 131075;
+    if (f === "OP47") return 196611;
+    return 0;
+}
+
+function _importProjectItemForPath(filePath) {
+    var proj = app.project;
+    var ok = proj.importFiles([filePath], true, proj.rootItem, false);
+    if (!ok) return null;
+    for (var i = proj.rootItem.children.numItems - 1; i >= 0; i--) {
+        var it = proj.rootItem.children[i];
+        if (it.getMediaPath && it.getMediaPath() === filePath) return it;
+    }
+    return null;
+}
+
+function createCaptionTrack(filePath, startTime, format) {
     try {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        format = format || "Subtitle";
-        var formatCode = 0;
-        if (format === "Closed" || format === "608") formatCode = 1;
-        else if (format === "708") formatCode = 2;
-        if (seq.addCaptionTrack) { seq.addCaptionTrack(formatCode); }
-        else if (typeof seq.createCaptionTrack === "function") { seq.createCaptionTrack(formatCode); }
-        else { return _err("Caption track creation not supported in this Premiere Pro version"); }
-        return _ok({ format: format, formatCode: formatCode, created: true });
+        if (typeof seq.createCaptionTrack !== "function") return _err("Caption track creation not supported in this Premiere Pro version");
+        if (!filePath || filePath === "") return _err("filePath is required: Premiere can only create a native caption track from an imported caption source file (.srt/.vtt) — there is no scripted way to create one from raw text");
+        var srcFile = new File(filePath);
+        if (!srcFile.exists) return _err("Caption source file not found: " + filePath);
+        startTime = parseFloat(startTime) || 0;
+        var item = _importProjectItemForPath(filePath);
+        if (!item) return _err("Failed to import caption source file: " + filePath);
+        var created = seq.createCaptionTrack(item, startTime, _captionFormatConst(format));
+        if (!created) return _err("Premiere rejected the caption source or format for createCaptionTrack");
+        return _ok({ filePath: filePath, startTime: startTime, format: format || "Subtitle", created: true, note: "Native text-based caption track created from the source file (not an image overlay)." });
     } catch (e) { return _err("createCaptionTrack failed: " + e.message); }
 }
 
@@ -5449,30 +5537,11 @@ function getCaptions(trackIndex) {
         if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
             var ct = seq.captionTracks[trackIndex];
             if (ct && ct.clips) { for (var ci = 0; ci < ct.clips.numItems; ci++) { var c = ct.clips[ci]; captions.push({ index: ci, text: c.name || "", startSeconds: _timeToSeconds(c.start), endSeconds: _timeToSeconds(c.end), duration: _timeToSeconds(c.duration) }); } }
-        } else if (trackIndex < seq.videoTracks.numTracks) {
-            var vt = seq.videoTracks[trackIndex];
-            if (vt && vt.clips) { for (var vc = 0; vc < vt.clips.numItems; vc++) { var v = vt.clips[vc]; captions.push({ index: vc, text: v.name || "", startSeconds: _timeToSeconds(v.start), endSeconds: _timeToSeconds(v.end), duration: _timeToSeconds(v.duration) }); } }
+        } else if (!seq.captionTracks) {
+            return _err("This Premiere Pro version exposes no scripted read-back API for existing caption tracks (seq.captionTracks is unavailable). Inspect captions in the Captions panel, or call premiere_create_caption_track/premiere_add_subtitles_from_srt again with an updated source file to add a fresh, correctly-timed caption track.");
         }
         return _ok({ trackIndex: trackIndex, captionCount: captions.length, captions: captions });
     } catch (e) { return _err("getCaptions failed: " + e.message); }
-}
-
-function addCaption(trackIndex, startTime, endTime, text) {
-    try {
-        if (!app.project) return _err("No project is open");
-        var seq = app.project.activeSequence;
-        if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0;
-        startTime = parseFloat(startTime) || 0;
-        endTime = parseFloat(endTime) || (startTime + 3.0);
-        if (!text || text === "") return _err("text is required");
-        if (seq.captionTracks && trackIndex < seq.captionTracks.numTracks) {
-            var ct = seq.captionTracks[trackIndex];
-            if (ct.addCaption) { ct.addCaption(_secondsToTime(startTime), _secondsToTime(endTime), text); }
-            else if (ct.insertClip) { ct.insertClip(text, _secondsToTime(startTime)); }
-        } else { return _err("Caption track index " + trackIndex + " out of range or not available"); }
-        return _ok({ trackIndex: trackIndex, startTime: startTime, endTime: endTime, text: text });
-    } catch (e) { return _err("addCaption failed: " + e.message); }
 }
 
 function editCaption(trackIndex, captionIndex, text) {
@@ -5491,7 +5560,7 @@ function editCaption(trackIndex, captionIndex, text) {
                 if (clip.getMGTComponent) { var comp = clip.getMGTComponent(); if (comp && comp.properties) { for (var pi = 0; pi < comp.properties.numItems; pi++) { try { comp.properties[pi].setValue(text, true); edited = true; break; } catch (pe) { continue; } } } }
                 if (!edited) { clip.name = text; edited = true; }
             } else { return _err("Caption index " + captionIndex + " out of range"); }
-        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        } else { return _err("Caption track index " + trackIndex + " out of range, or this Premiere Pro version exposes no scripted API to read back an existing caption track (seq.captionTracks is unavailable). To change caption text, edit the source .srt/.vtt and call premiere_create_caption_track/premiere_add_subtitles_from_srt again to add a fresh, correctly-timed text caption track — do not render caption text to an image as a substitute."); }
         return _ok({ trackIndex: trackIndex, captionIndex: captionIndex, text: text, edited: edited });
     } catch (e) { return _err("editCaption failed: " + e.message); }
 }
@@ -5507,7 +5576,7 @@ function deleteCaption(trackIndex, captionIndex) {
             var ct = seq.captionTracks[trackIndex];
             if (ct.clips && captionIndex < ct.clips.numItems) { ct.clips[captionIndex].remove(false, true); }
             else { return _err("Caption index " + captionIndex + " out of range"); }
-        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        } else { return _err("Caption track index " + trackIndex + " out of range, or this Premiere Pro version exposes no scripted API to enumerate an existing caption track's clips (seq.captionTracks is unavailable). Delete the caption track manually in the Captions panel or from the Timeline track header."); }
         return _ok({ trackIndex: trackIndex, captionIndex: captionIndex, deleted: true });
     } catch (e) { return _err("deleteCaption failed: " + e.message); }
 }
@@ -5551,7 +5620,7 @@ function styleCaptions(trackIndex, font, size, color, bgColor, position) {
                     styled++;
                 }
             }
-        } else { return _err("Caption track index " + trackIndex + " out of range"); }
+        } else { return _err("Caption track index " + trackIndex + " out of range, or this Premiere Pro version exposes no scripted API to reach an existing caption track's style components (seq.captionTracks is unavailable). Style captions via the Text workspace's Caption Track Styles panel in the Premiere UI."); }
         return _ok({ trackIndex: trackIndex, font: font || "", size: size, color: color || "", bgColor: bgColor || "", position: position || "", captionsStyled: styled });
     } catch (e) { return _err("styleCaptions failed: " + e.message); }
 }
@@ -15500,42 +15569,49 @@ function autoCorrectAllClips(trackIndex) {
 // ---------------------------------------------------------------------------
 
 /**
- * addSubtitlesFromSRT — Parse an SRT file and place subtitles on the timeline.
+ * addSubtitlesFromSRT — Import an SRT file and create a native, editable
+ * text-based caption track on the timeline via seq.createCaptionTrack().
+ * This does NOT render subtitle text into an image; Premiere renders the
+ * imported caption source natively (visible/editable in the Captions panel).
  * @param {string} srtPath - Path to the SRT file
- * @param {number} trackIndex - Video track index for captions
+ * @param {number} startTime - Where the caption track starts, in seconds
+ * @param {string} format - Caption format: "Subtitle" (default), "Closed"/"608", "708", etc.
  */
-function addSubtitlesFromSRT(srtPath, trackIndex) {
+function addSubtitlesFromSRT(srtPath, startTime, format) {
     try {
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
         if (!srtPath || srtPath === "") return _err("SRT path is required");
-        var ti = parseInt(trackIndex) || 0;
+        if (typeof seq.createCaptionTrack !== "function") return _err("Caption track creation not supported in this Premiere Pro version");
         var srtFile = new File(srtPath);
         if (!srtFile.exists) return _err("SRT file not found: " + srtPath);
+        startTime = parseFloat(startTime) || 0;
+
+        // Parse only to report how many entries were found; Premiere's own
+        // caption import handles the actual timing/placement.
         srtFile.open("r");
         var content = srtFile.read();
         srtFile.close();
         var blocks = content.split(/\r?\n\r?\n/);
-        var subtitles = [];
+        var subtitlesFound = 0;
         for (var b = 0; b < blocks.length; b++) {
             var lines = blocks[b].split(/\r?\n/);
             if (lines.length < 3) continue;
-            var timeLine = lines[1];
-            var match = timeLine.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
-            if (!match) continue;
-            var startSec = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 1000;
-            var endSec = parseInt(match[5]) * 3600 + parseInt(match[6]) * 60 + parseInt(match[7]) + parseInt(match[8]) / 1000;
-            var text = "";
-            for (var tl = 2; tl < lines.length; tl++) {
-                if (text !== "") text += "\n";
-                text += lines[tl];
-            }
-            subtitles.push({index: parseInt(lines[0]), start: startSec, end: endSec, text: text});
+            if (!lines[1].match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/)) continue;
+            subtitlesFound++;
         }
+        if (subtitlesFound === 0) return _err("No valid SRT entries found in " + srtPath);
+
+        var item = _importProjectItemForPath(srtPath);
+        if (!item) return _err("Failed to import SRT file: " + srtPath);
+        var created = seq.createCaptionTrack(item, startTime, _captionFormatConst(format));
+        if (!created) return _err("Premiere rejected the SRT file or format for createCaptionTrack");
+
         return _ok({
-            srtPath: srtPath, trackIndex: ti,
-            subtitlesFound: subtitles.length,
-            subtitles: subtitles
+            srtPath: srtPath, startTime: startTime, format: format || "Subtitle",
+            subtitlesFound: subtitlesFound,
+            created: true,
+            note: "Native text-based caption track created from the SRT file (not an image overlay)."
         });
     } catch (e) { return _err("addSubtitlesFromSRT failed: " + e.message); }
 }

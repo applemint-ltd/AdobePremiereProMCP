@@ -32,6 +32,7 @@ type (
 	TransitionParams     = orchestrator.TransitionParams
 	TextParams           = orchestrator.TextParams
 	TextStyle            = orchestrator.TextStyle
+	TextLayerParams      = orchestrator.TextLayerParams
 	Position             = orchestrator.Position
 	TimelineState        = orchestrator.TimelineState
 	ExportParams         = orchestrator.ExportParams

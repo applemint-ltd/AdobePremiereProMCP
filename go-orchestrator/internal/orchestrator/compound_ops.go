@@ -200,10 +200,11 @@ func (e *Engine) AutoCorrectAllClips(ctx context.Context, trackIndex int) (*Gene
 
 // --- Text Workflow ---
 
-func (e *Engine) AddSubtitlesFromSRT(ctx context.Context, srtPath string, trackIndex int) (*GenericResult, error) {
+func (e *Engine) AddSubtitlesFromSRT(ctx context.Context, srtPath string, startTime float64, format string) (*GenericResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{
-		"srtPath": srtPath,
-		"trackIndex": trackIndex,
+		"srtPath":   srtPath,
+		"startTime": startTime,
+		"format":    format,
 	})
 	result, err := e.premiere.EvalCommand(ctx, "addSubtitlesFromSRT", string(argsJSON))
 	if err != nil {
