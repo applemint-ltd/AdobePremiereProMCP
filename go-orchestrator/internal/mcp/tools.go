@@ -131,6 +131,21 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 		makeImportMediaHandler(orch, logger),
 	)
 
+	// premiere_import_from_google_drive
+	s.AddTool(
+		gomcp.NewTool("premiere_import_from_google_drive",
+			gomcp.WithDescription("Import a Google Drive file into the Premiere Pro project, using the results of the \"claude.ai Google Drive\" connector. This server has no access to that connector itself (it's authenticated to the calling agent's session, not this process), so the agent must do the Drive API calls: use the connector's search_files (or get_file_metadata) to find the file, then download_file_content to fetch it. For anything but tiny files, download_file_content's output is too large to inline and is instead saved to a JSON result file on disk (schema: {content: base64 string, id, mimeType, title}) — pass that file's path here as result_file_path, NOT the raw content. This tool decodes the content, saves it under a \"Downloaded Media\" folder next to the project, and imports it. Google-native files (Docs/Sheets/Slides) need an exportMimeType on download_file_content and export as text, not binary media — this tool is for actual media files (video/audio/image)."),
+			gomcp.WithString("result_file_path",
+				gomcp.Required(),
+				gomcp.Description("Absolute path to the JSON file the Google Drive connector's download_file_content tool saved its result to (reported in that tool's own output, under something like ~/.claude/projects/.../tool-results/...)."),
+			),
+			gomcp.WithString("target_bin",
+				gomcp.Description("Name of the project bin to import into (e.g. 'Footage'). If omitted, the file is imported into the project root."),
+			),
+		),
+		makeImportFromGoogleDriveHandler(orch, logger),
+	)
+
 	// premiere_place_clip
 	s.AddTool(
 		gomcp.NewTool("premiere_place_clip",
@@ -442,6 +457,25 @@ func makeImportMediaHandler(orch Orchestrator, logger *zap.Logger) server.ToolHa
 		if err != nil {
 			logger.Error("import media failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to import media: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeImportFromGoogleDriveHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		logger.Debug("handling premiere_import_from_google_drive")
+
+		resultFilePath := gomcp.ParseString(req, "result_file_path", "")
+		if resultFilePath == "" {
+			return gomcp.NewToolResultError("parameter 'result_file_path' is required"), nil
+		}
+		targetBin := gomcp.ParseString(req, "target_bin", "")
+
+		result, err := orch.ImportFromDriveDownload(ctx, resultFilePath, targetBin)
+		if err != nil {
+			logger.Error("import from google drive failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to import from google drive: %v", err)), nil
 		}
 		return toolResultJSON(result)
 	}

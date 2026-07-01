@@ -168,6 +168,7 @@ type Orchestrator interface {
 
 	// --- Clip Operations ---
 	ImportMedia(ctx context.Context, filePath string, targetBin string) (*ImportResult, error)
+	ImportFromDriveDownload(ctx context.Context, resultFilePath, targetBin string) (*ImportResult, error)
 	PlaceClip(ctx context.Context, params *PlaceClipParams) (*ClipResult, error)
 	RemoveClip(ctx context.Context, clipID, sequenceID string) error
 

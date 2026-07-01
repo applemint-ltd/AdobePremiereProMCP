@@ -12,17 +12,15 @@ import (
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/assets"
 )
 
-// generatedMediaDir returns a directory to write generated media into
-// (rendered text-layer PNGs, synthesized single-caption SRTs) — a "Generated
-// Media" folder next to the open project, created if it doesn't exist yet.
-// Falls back to the OS temp directory if the project hasn't been saved yet
-// (no project path to anchor to) or its path can't be determined, so callers
-// always get a usable directory back. Reuses getProjectInfo (already part of
-// the persistent host-script scope) rather than adding a dedicated command,
-// since new top-level functions in premiere.jsx don't take effect until the
-// CEP panel itself reloads core.jsx's #include chain — a plain server
-// restart doesn't do that.
-func (e *Engine) generatedMediaDir(ctx context.Context) string {
+// projectSubDir returns a directory named subDir next to the open project,
+// created if it doesn't exist yet. Falls back to the OS temp directory if
+// the project hasn't been saved yet (no project path to anchor to) or its
+// path can't be determined, so callers always get a usable directory back.
+// Reuses getProjectInfo (already part of the persistent host-script scope)
+// rather than adding a dedicated command, since new top-level functions in
+// premiere.jsx don't take effect until the CEP panel itself reloads
+// core.jsx's #include chain — a plain server restart doesn't do that.
+func (e *Engine) projectSubDir(ctx context.Context, subDir string) string {
 	// EvalCommand already unwraps the ExtendScript host's {success, data,
 	// error} envelope (see unwrapEnvelope in grpc/premiere_client.go) and
 	// returns an error directly on failure — result here is already just
@@ -37,11 +35,18 @@ func (e *Engine) generatedMediaDir(ctx context.Context) string {
 	if err := json.Unmarshal([]byte(result), &info); err != nil || info.Path == "" {
 		return os.TempDir()
 	}
-	dir := filepath.Join(filepath.Dir(info.Path), "Generated Media")
+	dir := filepath.Join(filepath.Dir(info.Path), subDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return os.TempDir()
 	}
 	return dir
+}
+
+// generatedMediaDir returns a directory to write generated media into
+// (rendered text-layer PNGs, synthesized single-caption SRTs) — a "Generated
+// Media" folder next to the open project.
+func (e *Engine) generatedMediaDir(ctx context.Context) string {
+	return e.projectSubDir(ctx, "Generated Media")
 }
 
 // TextLayerParams configures a rendered text layer clip.
