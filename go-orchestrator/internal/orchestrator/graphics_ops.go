@@ -166,7 +166,7 @@ func (e *Engine) AddCaption(ctx context.Context, startTime, endTime float64, tex
 	}
 	srt := fmt.Sprintf("1\n%s --> %s\n%s\n", srtTimestamp(startTime), srtTimestamp(endTime), text)
 
-	tmpFile, err := os.CreateTemp("", "premiere_caption_*.srt")
+	tmpFile, err := os.CreateTemp(e.generatedMediaDir(ctx), "premiere_caption_*.srt")
 	if err != nil {
 		return nil, fmt.Errorf("AddCaption: create temp SRT: %w", err)
 	}

@@ -6,10 +6,43 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/assets"
 )
+
+// generatedMediaDir returns a directory to write generated media into
+// (rendered text-layer PNGs, synthesized single-caption SRTs) — a "Generated
+// Media" folder next to the open project, created if it doesn't exist yet.
+// Falls back to the OS temp directory if the project hasn't been saved yet
+// (no project path to anchor to) or its path can't be determined, so callers
+// always get a usable directory back. Reuses getProjectInfo (already part of
+// the persistent host-script scope) rather than adding a dedicated command,
+// since new top-level functions in premiere.jsx don't take effect until the
+// CEP panel itself reloads core.jsx's #include chain — a plain server
+// restart doesn't do that.
+func (e *Engine) generatedMediaDir(ctx context.Context) string {
+	// EvalCommand already unwraps the ExtendScript host's {success, data,
+	// error} envelope (see unwrapEnvelope in grpc/premiere_client.go) and
+	// returns an error directly on failure — result here is already just
+	// getProjectInfo's inner data object.
+	result, err := e.premiere.EvalCommand(ctx, "getProjectInfo", "{}")
+	if err != nil {
+		return os.TempDir()
+	}
+	var info struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(result), &info); err != nil || info.Path == "" {
+		return os.TempDir()
+	}
+	dir := filepath.Join(filepath.Dir(info.Path), "Generated Media")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return os.TempDir()
+	}
+	return dir
+}
 
 // TextLayerParams configures a rendered text layer clip.
 type TextLayerParams struct {
@@ -98,7 +131,7 @@ func (e *Engine) AddTextLayer(ctx context.Context, params *TextLayerParams) (*Ge
 		return nil, fmt.Errorf("add_text_layer: close temp swift script: %w", err)
 	}
 
-	pngFile, err := os.CreateTemp("", "premiere_text_layer_*.png")
+	pngFile, err := os.CreateTemp(e.generatedMediaDir(ctx), "premiere_text_layer_*.png")
 	if err != nil {
 		return nil, fmt.Errorf("add_text_layer: create temp PNG: %w", err)
 	}
