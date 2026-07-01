@@ -1272,3 +1272,15 @@ function simulateMenuClick(argsJson) {
         return _ok({ message: "Menu clicked: " + menuPath });
     } catch (e) { return _err("Failed to simulate menu click '" + (args && args.menu_path ? args.menu_path : "unknown") + "': " + e.message); }
 }
+
+// ── Load the full premiere.jsx library into this (persistent) scope ─────────
+// core.jsx is the CEP manifest <ScriptPath>, evaluated once into the persistent
+// ExtendScript engine, so its functions survive across evalScript commands.
+// Runtime evalScript loads (from panel.js) land in a non-persistent scope, so
+// premiere.jsx must be pulled in HERE to persist. Use the #include preprocessor
+// directive rather than $.evalFile: #include resolves relative to THIS file at
+// parse time and does not depend on $.fileName (which is empty during a
+// ScriptPath evaluation, so a runtime $.evalFile of a $.fileName-derived path
+// silently fails). Being included last, premiere.jsx's full implementations
+// shadow the limited core fallbacks defined above.
+//@include "premiere.jsx"
