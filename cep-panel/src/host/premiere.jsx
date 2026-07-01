@@ -150,32 +150,11 @@ function _resolveExportedStill(outPath) {
 }
 
 // ---------------------------------------------------------------------------
-// ping() - Health check
-// ---------------------------------------------------------------------------
-function ping() {
-    try {
-        var info = {
-            status: "ok",
-            host: "Premiere Pro",
-            version: app.version || "unknown",
-            buildNumber: app.build || "unknown",
-            timestamp: new Date().toISOString()
-        };
-
-        // Check if a project is open
-        if (app.project) {
-            info.projectOpen = true;
-            info.projectName = app.project.name || "";
-        } else {
-            info.projectOpen = false;
-        }
-
-        return _ok(info);
-    } catch (e) {
-        return _err("ping failed: " + e.message);
-    }
-}
-
+// ping() lives in core.jsx -- do not redeclare it here. core.jsx is
+// #included at the end of this file's inclusion chain, so a second
+// `function ping()` here would silently shadow the one wired to the actual
+// premiere_ping tool contract (premiere_running/premiere_version/
+// project_open/bridge_mode), and every field would come back false/empty.
 // ---------------------------------------------------------------------------
 // getProjectState() - Full project overview
 // ---------------------------------------------------------------------------

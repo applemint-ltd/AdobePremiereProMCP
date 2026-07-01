@@ -71,6 +71,9 @@ go-orchestrator/cli
 # ─── Runtime artifacts ───
 scripts/.pids
 
+# ─── Local notes ───
+TODO.md
+
 # ─── Python bytecode (anywhere, incl. generated gen/) ───
 **/__pycache__/
 **/*.pyc
