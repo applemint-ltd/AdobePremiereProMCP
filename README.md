@@ -250,6 +250,80 @@ Platform-specific launchers are included for quick setup:
 - **Windows:** `PremierPro.bat`
 - **Linux/Universal:** `./PremierPro.sh`
 
+### Slack Bot (drive edits from Slack, no terminal needed)
+
+Premiere Pro is single-instance, so this whole stack is designed to run on
+one "hub" machine. The Slack bot lets everyone else in the office trigger
+edits on that hub from a dedicated Slack channel, instead of typing into the
+CLI directly.
+
+Unlike the interactive CLI (`index.ts`), the bot does not use the Anthropic
+SDK or an `ANTHROPIC_API_KEY` -- it shells out to the real `claude` CLI in
+headless mode (`claude -p`), so it runs against whatever the operator is
+already logged into via `claude login` (Pro/Max/Team plan usage), not
+metered API billing. Tool access is scoped to just the premierpro-mcp
+server (`--allowedTools "mcp__premierpro-mcp__*"`) -- no Bash, file, or web
+tools. Conversation continuity across Slack messages uses `claude`'s own
+session resume (`--resume <session_id>`), so one video project's whole
+back-and-forth is a single ongoing Claude Code session; say "new project" or
+"reset" in the channel to start a fresh one.
+
+**1. Create a Slack app** at [api.slack.com/apps](https://api.slack.com/apps):
+- Enable **Socket Mode** (the bot connects outbound to Slack -- no public
+  webhook or open port needed on this Mac).
+- Bot token scopes: `chat:write`, `channels:history`, `app_mentions:read`,
+  `reactions:write` (for the 👀 acknowledgement reaction -- optional, the
+  bot still works without it, it just won't react).
+- Subscribe to the `message.channels` event.
+- Install the app to your workspace, create a dedicated channel (e.g.
+  `#premiere-edits`), and invite the bot into it.
+- Copy the **Bot Token** (`xoxb-...`) and **App-Level Token** (`xapp-...`,
+  needs the `connections:write` scope).
+
+**2. Configure `.env`:**
+
+```bash
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+SLACK_CHANNEL_ID=C0123456789   # the dedicated channel's ID
+```
+
+**3. Run it** (make sure the backend services and Premiere Pro are up first):
+
+```bash
+npm run --prefix cli slack-bot
+```
+
+Anyone in `#premiere-edits` can now type requests ("cut a 30s promo from
+clip_04.mp4, add a lower-third with the speaker's name") and the bot will
+run them against the live Premiere Pro project on this machine and reply
+in-thread. Say "new project" (or "reset") in the channel to clear the bot's
+conversation memory when starting the next project.
+
+**4. Keep it running** without a terminal open, with auto-restart on crash
+or reboot:
+
+```bash
+./scripts/install-slack-bot-service.sh
+```
+
+This installs a per-user `launchd` LaunchAgent (a LaunchDaemon won't work
+here -- Premiere Pro needs a logged-in GUI session). Logs land in
+`scripts/logs/slack-bot.log`.
+
+**Exports:** point your export preset's output folder at a directory synced
+by the Google Drive desktop app (e.g. a shared drive folder). No extra code
+is needed -- Drive's own sync picks up the finished file, and the bot's
+Slack reply will name it.
+
+**Guardrails:**
+- Don't run the interactive CLI and the Slack bot at the same time against
+  the same project -- both spawn independent MCP connections and would issue
+  uncoordinated commands against the one open Premiere Pro project.
+- This hub can only usefully work one video project at a time (one Premiere
+  Pro project open). A second concurrent project needs a second physical hub
+  (another machine with its own Premiere Pro + this stack).
+
 ## How It Works
 
 1. **You send a prompt** -- "Edit this video using the script with footage from /media/"

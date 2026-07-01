@@ -196,7 +196,7 @@ function ping() {
             projOpen = !!(app.project && app.project.name);
             if (projOpen) projName = app.project.name;
         } catch (e2) {}
-        return _ok({ premiere_running: true, premiere_version: ver, project_open: projOpen, project_name: projName });
+        return _ok({ premiere_running: true, premiere_version: ver, project_open: projOpen, project_name: projName, bridge_mode: "cep" });
     } catch (e) { return _err("Ping failed: " + e.message); }
 }
 

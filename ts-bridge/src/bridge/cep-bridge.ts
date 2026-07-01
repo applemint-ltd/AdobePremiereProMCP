@@ -166,9 +166,10 @@ export class CepBridge implements PremiereBridge {
           ws.terminate();
           this.log.warn(
             `Connection to CEP panel at ${this.wsUrl} timed out. ` +
-              "Bridge will operate in disconnected mode.",
+              "Bridge will operate in disconnected mode until it reconnects.",
           );
           resolve();
+          this.scheduleReconnect();
         }
       }, this.commandTimeoutMs);
 
@@ -224,9 +225,10 @@ export class CepBridge implements PremiereBridge {
           clearTimeout(connectionTimeout);
           this.log.warn(
             `Could not connect to CEP panel: ${err.message}. ` +
-              "Bridge will operate in disconnected mode.",
+              "Bridge will operate in disconnected mode until it reconnects.",
           );
           resolve();
+          this.scheduleReconnect();
         } else {
           this.log.error(`WebSocket error: ${err.message}`);
         }
@@ -412,7 +414,25 @@ export class CepBridge implements PremiereBridge {
 
   async ping(): Promise<PingResult> {
     try {
-      return await this.send<PingResult>("ping", {});
+      // panel.js's sendResponse() forwards the ExtendScript function's whole
+      // _ok()/_err() envelope ({success, data}) as response.result, without
+      // unwrapping .data -- unlike the generic evalCommand path, this method
+      // treats the send() result as the payload directly, so it must unwrap
+      // here. The ExtendScript side also uses snake_case field names
+      // (premiere_running, etc.), which need mapping onto PingResult's
+      // camelCase shape.
+      const raw = await this.send<Record<string, unknown>>("ping", {});
+      const data =
+        raw && typeof raw === "object" && "data" in raw
+          ? (raw.data as Record<string, unknown>)
+          : raw;
+
+      return {
+        premiereRunning: Boolean(data?.["premiere_running"] ?? data?.["premiereRunning"]),
+        premiereVersion: String(data?.["premiere_version"] ?? data?.["premiereVersion"] ?? "unknown"),
+        projectOpen: Boolean(data?.["project_open"] ?? data?.["projectOpen"]),
+        bridgeMode: String(data?.["bridge_mode"] ?? data?.["bridgeMode"] ?? "cep"),
+      };
     } catch {
       return {
         premiereRunning: false,
