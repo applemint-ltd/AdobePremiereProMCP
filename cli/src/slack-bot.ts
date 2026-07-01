@@ -11,8 +11,12 @@
  * interactive CLI (index.ts), it never touches ANTHROPIC_API_KEY.
  *
  * Conversation continuity across Slack messages is done via `claude`'s own
- * session resume (--resume <session_id>), so one video project's whole
- * back-and-forth is a single ongoing Claude Code session.
+ * session resume (--resume <session_id>), scoped one-to-one with Slack
+ * threads: each thread gets its own Claude Code session, so unrelated
+ * conversations (e.g. two different video projects) started in the same
+ * channel don't share context. A new top-level message starts a new thread
+ * (and thus a new session); replying within an existing thread resumes that
+ * thread's session.
  */
 
 import "./load-env.js";
@@ -45,13 +49,16 @@ interface ClaudeResult {
 interface IncomingMessage {
   text?: string;
   ts: string;
+  thread_ts?: string;
   channel: string;
   subtype?: string;
   bot_id?: string;
   user?: string;
 }
 
-let currentSessionId: string | null = null;
+// One Claude Code session per Slack thread. Keyed by the thread's root
+// timestamp (a top-level message's own `ts`, or a reply's `thread_ts`).
+const sessionIdsByThread = new Map<string, string>();
 
 /** Spawn `claude -p` for one turn. No shell involved, so Slack message text can't inject flags. */
 function runClaude(text: string, resumeSessionId: string | null): Promise<ClaudeResult> {
@@ -89,14 +96,15 @@ function runClaude(text: string, resumeSessionId: string | null): Promise<Claude
 }
 
 /** Run a turn, transparently retrying once without --resume if the session was invalid/expired. */
-async function runClaudeWithRetry(text: string): Promise<ClaudeResult> {
+async function runClaudeWithRetry(text: string, threadKey: string): Promise<ClaudeResult> {
+  const resumeSessionId = sessionIdsByThread.get(threadKey) ?? null;
   try {
-    return await runClaude(text, currentSessionId);
+    return await runClaude(text, resumeSessionId);
   } catch (err) {
-    if (currentSessionId) {
+    if (resumeSessionId) {
       const msg = err instanceof Error ? err.message : String(err);
       printError(`Resume failed (${msg}), retrying as a fresh session...`);
-      currentSessionId = null;
+      sessionIdsByThread.delete(threadKey);
       return runClaude(text, null);
     }
     throw err;
@@ -154,6 +162,13 @@ async function main(): Promise<void> {
     say: (args: { text: string; thread_ts: string }) => Promise<unknown>,
     client: App["client"],
   ): Promise<void> {
+    // A reply within an existing thread carries thread_ts (the root
+    // message's timestamp); a new top-level message doesn't, so it becomes
+    // the root of its own new thread. Using this as the session key means a
+    // new thread always gets a fresh session, and replies within a thread
+    // resume that thread's session.
+    const threadKey = msg.thread_ts || msg.ts;
+
     try {
       await client.reactions.add({ channel: msg.channel, timestamp: msg.ts, name: "eyes" });
     } catch {
@@ -161,17 +176,17 @@ async function main(): Promise<void> {
     }
 
     if (RESET_COMMANDS.has(text.toLowerCase())) {
-      currentSessionId = null;
+      sessionIdsByThread.delete(threadKey);
       await say({
         text: "Started a fresh conversation. What project are we working on?",
-        thread_ts: msg.ts,
+        thread_ts: threadKey,
       });
       return;
     }
 
     try {
-      const result = await runClaudeWithRetry(text);
-      if (result.session_id) currentSessionId = result.session_id;
+      const result = await runClaudeWithRetry(text, threadKey);
+      if (result.session_id) sessionIdsByThread.set(threadKey, result.session_id);
 
       const sessionLabel = result.session_id ? result.session_id.slice(0, 8) : "?";
       const logText = text.replace(/\s+/g, " ").slice(0, 60);
@@ -184,11 +199,11 @@ async function main(): Promise<void> {
       if (result.permission_denials && result.permission_denials.length > 0) {
         reply += `\n_(${result.permission_denials.length} action(s) were blocked by tool permissions)_`;
       }
-      await say({ text: reply, thread_ts: msg.ts });
+      await say({ text: reply, thread_ts: threadKey });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       printError(`Chat error: ${errMsg}`);
-      await say({ text: `Something went wrong: ${errMsg}`, thread_ts: msg.ts });
+      await say({ text: `Something went wrong: ${errMsg}`, thread_ts: threadKey });
     }
   }
 
