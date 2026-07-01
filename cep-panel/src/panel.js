@@ -283,24 +283,21 @@
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
 
-            // Build lazy-load prefix: if the function doesn't exist yet,
-            // load the full premiere.jsx (once) to make it available.
-            var loadScript = "";
-            if (!premiereJsxLoaded) {
-                loadScript =
-                    'if (typeof ' + fn + ' !== "function") { ' +
-                    '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
-                    '} ';
-            }
+            // Route through the host-side __invoke dispatcher, which adapts the
+            // single JSON-string argument to the target function's actual
+            // signature (positional vs self-parsing) so positional functions
+            // stop receiving the whole blob and defaulting every arg to 0.
+            // __invoke and all host functions are loaded at startup via the
+            // manifest ScriptPath (core.jsx #includes premiere.jsx), so no
+            // lazy-load is needed. Falls back to a direct call if __invoke is
+            // somehow absent. Single expression so evalScript returns the result.
+            var safeArgs = (argsJson && argsJson !== "[]") ? argsJson : "{}";
+            var callScript =
+                '(typeof __invoke === "function") ? __invoke(' +
+                escapeForEval(fn) + ", " + escapeForEval(safeArgs) + ") : " +
+                fn + "(" + escapeForEval(safeArgs) + ")";
 
-            var callScript;
-            if (argsJson && argsJson !== "{}" && argsJson !== "[]") {
-                callScript = fn + "(" + escapeForEval(argsJson) + ")";
-            } else {
-                callScript = fn + "()";
-            }
-
-            return loadScript + callScript;
+            return callScript;
         },
     };
 

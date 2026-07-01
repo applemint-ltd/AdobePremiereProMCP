@@ -91,6 +91,74 @@ function _parseArgs(argsJson, requiredFields) {
     return args;
 }
 
+function __toSnakeCase(s) {
+    return s.replace(/([A-Z])/g, function (m, c) { return "_" + c.toLowerCase(); });
+}
+
+/**
+ * Central dispatch for bridge-invoked host functions.
+ *
+ * The bridge (panel.js evalCommand) delivers a command's arguments as a single
+ * JSON string. Functions come in two shapes: self-parsing ones declared as
+ * fn(argsJson) that JSON.parse the payload, and positional ones declared as
+ * fn(trackIndex, clipIndex, ...). Calling a positional function with the raw
+ * JSON string put the whole blob in the first parameter, so parseInt(...)||0
+ * defaulted every argument to 0 (they silently operated on track 0 / clip 0).
+ *
+ * __invoke adapts the call to the target's actual signature:
+ *   - 0 params            -> call bare
+ *   - 1 param ending Json  -> pass the raw JSON string (self-parsing function)
+ *   - otherwise            -> spread named args positionally by parameter name
+ *                             ({params:{...}} unwrap + snake_case fallback)
+ * If introspection throws, or no named arg matches, it falls back to the legacy
+ * fn(argsJson) call, so behavior is never worse than before.
+ *
+ * This works because premiere.jsx is #included into core.jsx (see end of this
+ * file): all host functions share one scope, so eval(fnName) here resolves both
+ * core and premiere functions. (A dispatcher that lived in a separately
+ * $.evalFile'd file could not — that was the earlier failed approach.)
+ */
+function __invoke(fnName, argsJson) {
+    var fn = null;
+    try { fn = eval(fnName); } catch (e0) {}
+    if (typeof fn !== "function") { try { fn = $.global[fnName]; } catch (e1) {} }
+    if (typeof fn !== "function") { return _err("Unknown function: " + fnName); }
+    try {
+        var m = fn.toString().match(/function[^(]*\(([^)]*)\)/);
+        var paramStr = m ? m[1] : "";
+        var params = [];
+        if (paramStr.replace(/\s/g, "") !== "") {
+            var parts = paramStr.split(",");
+            for (var i = 0; i < parts.length; i++) {
+                var p = parts[i].replace(/\s/g, "");
+                if (p) { params.push(p); }
+            }
+        }
+        if (params.length === 0) { return fn(); }
+        if (params.length === 1 && /json$/i.test(params[0])) { return fn(argsJson); }
+        var obj = {};
+        if (typeof argsJson === "string" && argsJson.length && argsJson.charAt(0) === "{") {
+            obj = JSON.parse(argsJson);
+        }
+        if (obj && obj.params && typeof obj.params === "object") { obj = obj.params; }
+        var callArgs = [];
+        var anyMatched = false;
+        for (var j = 0; j < params.length; j++) {
+            var name = params[j];
+            var v = obj[name];
+            if (v === undefined) { v = obj[__toSnakeCase(name)]; }
+            if (v !== undefined) { anyMatched = true; }
+            callArgs.push(v);
+        }
+        if (!anyMatched) { return fn(argsJson); }
+        return fn.apply(null, callArgs);
+    } catch (e2) {
+        try { return fn(argsJson); } catch (e3) {
+            return _err("__invoke(" + fnName + ") failed: " + (e2 && e2.message ? e2.message : e2));
+        }
+    }
+}
+
 /**
  * Return the active sequence or null, guarding against app.project being null.
  */
