@@ -334,6 +334,7 @@ type Orchestrator interface {
 
 	// --- Media Analysis (Rust engine) ---
 	ScanAssets(ctx context.Context, dir string, recursive bool, extensions []string) (*ScanResult, error)
+	DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error)
 
 	// --- Intelligence (Python service) ---
 	ParseScript(ctx context.Context, text string, filePath string, format string) (*ParsedScript, error)

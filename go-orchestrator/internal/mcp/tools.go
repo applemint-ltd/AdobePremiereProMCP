@@ -354,6 +354,21 @@ func registerAITools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger)
 		makeScanAssetsHandler(orch, logger),
 	)
 
+	// premiere_detect_scene_changes
+	s.AddTool(
+		gomcp.NewTool("premiere_detect_scene_changes",
+			gomcp.WithDescription("Detect visual scene-change/cut points in a video file using ffmpeg's frame-comparison scene filter (real pixel-level analysis, not a heuristic). Operates on a media file on disk -- use premiere_get_clip_metadata or premiere_get_media_path to find a clip's source file path, or export the sequence first with premiere_export or premiere_export_direct to analyze a rendered timeline. This is the tool to use for frame-by-frame visual cut-point detection; premiere_detect_scene_edits relies on a Premiere Pro scripting API that is unavailable in current app versions."),
+			gomcp.WithString("file_path",
+				gomcp.Required(),
+				gomcp.Description("Absolute path to the video file to analyze (e.g. '/Users/me/footage/interview.mp4')."),
+			),
+			gomcp.WithNumber("threshold",
+				gomcp.Description("Scene-change sensitivity from 0.0-1.0 (default: 0.3). Lower values detect more/subtler cuts; higher values detect only dramatic cuts."),
+			),
+		),
+		makeDetectScenesHandler(orch, logger),
+	)
+
 	// premiere_parse_script
 	s.AddTool(
 		gomcp.NewTool("premiere_parse_script",
@@ -734,6 +749,25 @@ func makeScanAssetsHandler(orch Orchestrator, logger *zap.Logger) server.ToolHan
 		if err != nil {
 			logger.Error("scan assets failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to scan assets: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeDetectScenesHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		logger.Debug("handling premiere_detect_scene_changes")
+
+		filePath := gomcp.ParseString(req, "file_path", "")
+		if filePath == "" {
+			return gomcp.NewToolResultError("parameter 'file_path' is required"), nil
+		}
+		threshold := gomcp.ParseFloat64(req, "threshold", 0.3)
+
+		result, err := orch.DetectScenes(ctx, filePath, threshold)
+		if err != nil {
+			logger.Error("detect scenes failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to detect scenes: %v", err)), nil
 		}
 		return toolResultJSON(result)
 	}

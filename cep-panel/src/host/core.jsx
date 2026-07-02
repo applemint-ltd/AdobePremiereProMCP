@@ -1220,17 +1220,18 @@ function captureFrameAsBase64(argsJson) {
         var tempDir = Folder.temp.fsName;
         var tempFile = tempDir + "/mcp_frame_" + (new Date()).getTime() + ".png";
 
-        app.enableQE();
-        var qeSeq;
-        try { qeSeq = qe.project.getActiveSequence(); } catch (e1) {}
-        if (!qeSeq) return _err("QE DOM not available for frame capture.");
-
         var pos = seq.getPlayerPosition();
         if (!pos) return _err("Could not read playhead position for frame capture.");
 
-        qeSeq.exportFramePNG(pos.ticks, tempFile);
+        // qeSeq.exportFramePNG dumps a stale program-monitor cache and ignores
+        // the requested ticks (see exportFrame in premiere.jsx). Render fresh
+        // via the in-process encoder instead, same as the fixed exportFrame path.
+        var exportResult = exportFrame(JSON.stringify({ outputPath: tempFile, format: "PNG" }));
+        var parsedExport;
+        try { parsedExport = JSON.parse(exportResult); } catch (pe) { return _err("Failed to capture frame: could not parse export result."); }
+        if (!parsedExport.success) return _err("Failed to capture frame: " + parsedExport.error);
 
-        var file = new File(tempFile);
+        var file = new File(parsedExport.data.outputPath);
         if (!file.exists) return _err("Failed to capture frame: exported PNG file not created.");
 
         file.open("r");

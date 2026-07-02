@@ -398,6 +398,28 @@ func (e *Engine) ScanAssets(ctx context.Context, dir string, recursive bool, ext
 	return res, nil
 }
 
+// DetectScenes delegates to the Rust media engine to find scene-change
+// boundaries in a video file via ffmpeg's scene-detection filter.
+func (e *Engine) DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("detect_scenes: file_path is required — provide the full path to a video file")
+	}
+	e.logger.Debug("detect_scenes: scanning",
+		zap.String("file_path", filePath),
+		zap.Float64("threshold", threshold),
+	)
+	res, err := e.media.DetectScenes(ctx, filePath, threshold)
+	if err != nil {
+		e.logger.Error("detect_scenes: failed", zap.String("file_path", filePath), zap.Error(err))
+		return nil, fmt.Errorf("failed to detect scenes in %q — verify the file exists and ffmpeg is installed on the machine running the media engine: %w", filePath, err)
+	}
+	e.logger.Info("detect_scenes: success",
+		zap.String("file_path", filePath),
+		zap.Int("scenes_found", len(res.Scenes)),
+	)
+	return res, nil
+}
+
 // ---------------------------------------------------------------------------
 // Intelligence (delegated to Python service)
 // ---------------------------------------------------------------------------

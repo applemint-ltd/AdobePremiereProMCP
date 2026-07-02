@@ -1032,9 +1032,20 @@ function exportFrame(outputPath, format) {
             } catch (re) { /* best-effort restore */ }
         }
 
-        var finalPath = _resolveExportedStill(outPath);
-        if (!finalPath || !File(finalPath).exists) {
-            return _err("Frame export produced no file (encoder: " + encResult + ", preset: " + preset + ")");
+        // exportAsMediaDirect can return before the file is flushed to disk
+        // (observed: "No Error" returned immediately, file appears up to a
+        // couple seconds later). Poll briefly instead of checking once.
+        var finalPath = null;
+        var waitedMs = 0;
+        while (waitedMs < 8000) {
+            finalPath = _resolveExportedStill(outPath);
+            if (finalPath && File(finalPath).exists) break;
+            finalPath = null;
+            $.sleep(200);
+            waitedMs += 200;
+        }
+        if (!finalPath) {
+            return _err("Frame export produced no file after waiting " + waitedMs + "ms (encoder: " + encResult + ", preset: " + preset + ")");
         }
 
         return _ok({
@@ -5712,8 +5723,12 @@ function detectSceneEdits(trackIndex, clipIndex, sensitivity) {
         if (!app.project) return _err("No project is open");
         var seq = app.project.activeSequence;
         if (!seq) return _err("No active sequence");
-        trackIndex = parseInt(trackIndex, 10) || 0; clipIndex = parseInt(clipIndex, 10) || 0;
-        sensitivity = Math.max(0, Math.min(100, parseFloat(sensitivity) || 50.0));
+        // Args arrive as a single JSON string (see bridge arg convention);
+        // don't rely on positional params.
+        var a = _args(trackIndex);
+        trackIndex = parseInt(a.trackIndex !== undefined ? a.trackIndex : a.track_index, 10) || 0;
+        clipIndex = parseInt(a.clipIndex !== undefined ? a.clipIndex : a.clip_index, 10) || 0;
+        sensitivity = Math.max(0, Math.min(100, parseFloat(a.sensitivity) || 50.0));
         if (trackIndex >= seq.videoTracks.numTracks) return _err("Video track index " + trackIndex + " out of range");
         var track = seq.videoTracks[trackIndex];
         if (!track.clips || clipIndex >= track.clips.numItems) return _err("Clip index " + clipIndex + " out of range");
@@ -5722,9 +5737,72 @@ function detectSceneEdits(trackIndex, clipIndex, sensitivity) {
         if (!pi) return _err("Clip has no associated project item for scene detection");
         if (pi.createSceneEditMarkers) { pi.createSceneEditMarkers(sensitivity); }
         else if (pi.applyCutsAtSceneEdits) { pi.applyCutsAtSceneEdits(sensitivity); }
-        else { return _err("Scene edit detection not supported in this Premiere Pro version"); }
+        else { return _err("Scene edit detection not supported in this Premiere Pro version (createSceneEditMarkers/applyCutsAtSceneEdits removed). Use premiere_detect_scene_changes on the clip's source media file instead -- it runs real ffmpeg frame analysis."); }
         return _ok({ trackIndex: trackIndex, clipIndex: clipIndex, clipName: clip.name || "", sensitivity: sensitivity, detected: true });
     } catch (e) { return _err("detectSceneEdits failed: " + e.message); }
+}
+
+// detectJumpCuts — heuristic jump-cut detection. Premiere's scripting DOM has
+// no frame-comparison API, so this flags cut points between two directly
+// adjacent clips that share the same source media (the classic "same shot,
+// mid-sentence cut" jump-cut pattern) rather than doing real pixel analysis.
+function detectJumpCuts(sequenceID) {
+    try {
+        if (!app.project) return _err("No project is open");
+        var a = _args(sequenceID);
+        var seqId = a.sequenceID || a.sequence_id || "";
+        var threshold = Math.max(0, Math.min(1, parseFloat(a.threshold)));
+        if (isNaN(threshold)) threshold = 0.85;
+
+        var seq = null;
+        if (seqId) {
+            for (var si = 0; si < app.project.sequences.numSequences; si++) {
+                if (app.project.sequences[si].sequenceID === seqId) { seq = app.project.sequences[si]; break; }
+            }
+        }
+        if (!seq) seq = app.project.activeSequence;
+        if (!seq) return _err("No active sequence");
+
+        function sourceKey(pi) {
+            if (!pi) return null;
+            try { if (pi.getMediaPath) { var mp = pi.getMediaPath(); if (mp) return mp; } } catch (mpe) {}
+            return pi.name || null;
+        }
+
+        var jumpCuts = [];
+        for (var ti = 0; ti < seq.videoTracks.numTracks; ti++) {
+            var track = seq.videoTracks[ti];
+            if (!track.clips) continue;
+            for (var ci = 0; ci < track.clips.numItems - 1; ci++) {
+                var clipA = track.clips[ci];
+                var clipB = track.clips[ci + 1];
+                var endA = _timeToSeconds(clipA.end);
+                var startB = _timeToSeconds(clipB.start);
+                if (Math.abs(startB - endA) > 0.05) continue; // not directly adjacent (gap/overlap; allow ~1 frame of rounding)
+
+                var keyA = sourceKey(clipA.projectItem);
+                var keyB = sourceKey(clipB.projectItem);
+                if (!keyA || !keyB || keyA !== keyB) continue; // different source -> not a same-shot jump cut
+
+                var durA = _timeToSeconds(clipA.end) - _timeToSeconds(clipA.start);
+                var durB = _timeToSeconds(clipB.end) - _timeToSeconds(clipB.start);
+                var confidence = 0.6;
+                if (durA < 3 && durB < 3) confidence += 0.25;
+                if (durA < 1.5 && durB < 1.5) confidence += 0.1;
+                confidence = Math.min(0.95, confidence);
+
+                if (confidence >= threshold) {
+                    jumpCuts.push({
+                        position_seconds: startB,
+                        confidence: confidence,
+                        clip_before: clipA.name || "",
+                        clip_after: clipB.name || ""
+                    });
+                }
+            }
+        }
+        return _ok({ jump_cuts: jumpCuts, count: jumpCuts.length });
+    } catch (e) { return _err("detectJumpCuts failed: " + e.message); }
 }
 
 // ===========================================================================
@@ -12877,11 +12955,29 @@ function batchApplyTransitions(trackIndex, transitionName, duration) {
 // 24. batchExportFrames
 function batchExportFrames(trackIndex, outputDir, format) {
     try {
+        // Args arrive as a single JSON string (see bridge arg convention);
+        // don't rely on positional params.
+        var a = _args(trackIndex);
+        outputDir = a.outputDir || a.output_dir || ((typeof outputDir === "string" && outputDir.charAt(0) !== "{") ? outputDir : "");
+        format = a.format || format || "png";
+        trackIndex = parseInt(a.trackIndex !== undefined ? a.trackIndex : a.track_index, 10) || 0;
         if (!outputDir) return _err("outputDir is required"); if (!app.project || !app.project.activeSequence) return _err("No active sequence");
         var seq = app.project.activeSequence; if (trackIndex < 0 || trackIndex >= seq.videoTracks.numTracks) return _err("Invalid track index");
-        var track = seq.videoTracks[trackIndex]; var fmt = format || "png";
+        var track = seq.videoTracks[trackIndex]; var fmt = String(format).toLowerCase();
         var dir = new Folder(outputDir); if (!dir.exists) dir.create(); var exported = 0;
-        for (var i = 0; i < track.clips.numItems; i++) { try { var clip = track.clips[i]; var outPath = outputDir + "/" + clip.name.replace(/[^a-zA-Z0-9_\-]/g, "_") + "_" + i + "." + fmt; seq.exportFramePNG(clip.start.ticks, outPath); exported++; } catch (fe) {} }
+        // seq.exportFramePNG was removed in newer Premiere; use the fixed
+        // exportFrame() path (in-process encoder at a saved/restored playhead).
+        var savedPos = seq.getPlayerPosition();
+        for (var i = 0; i < track.clips.numItems; i++) {
+            try {
+                var clip = track.clips[i];
+                var outPath = outputDir + "/" + clip.name.replace(/[^a-zA-Z0-9_\-]/g, "_") + "_" + i + "." + fmt;
+                seq.setPlayerPosition(clip.start.ticks);
+                var res = JSON.parse(exportFrame(JSON.stringify({ outputPath: outPath, format: fmt })));
+                if (res.success) exported++;
+            } catch (fe) {}
+        }
+        try { seq.setPlayerPosition(savedPos.ticks); } catch (re) {}
         return _ok({exported: exported, totalClips: track.clips.numItems, outputDir: outputDir, format: fmt});
     } catch (e) { return _err("batchExportFrames failed: " + e.message); }
 }

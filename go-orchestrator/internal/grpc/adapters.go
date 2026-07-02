@@ -354,13 +354,23 @@ func (a *MediaAdapter) DetectScenes(ctx context.Context, filePath string, thresh
 	scenes := make([]*orch.SceneChange, len(res.Scenes))
 	for i, s := range res.Scenes {
 		scenes[i] = &orch.SceneChange{
-			TimecodeSeconds: s.Timecode.FrameRate, // approximate seconds from timecode
+			TimecodeSeconds: timecodeToSeconds(s.Timecode),
 			Confidence:      s.Confidence,
 		}
 	}
 	return &orch.SceneResult{
 		Scenes: scenes,
 	}, nil
+}
+
+// timecodeToSeconds converts an hours/minutes/seconds/frames Timecode into a
+// total seconds offset.
+func timecodeToSeconds(tc Timecode) float64 {
+	total := float64(tc.Hours)*3600 + float64(tc.Minutes)*60 + float64(tc.Seconds)
+	if tc.FrameRate > 0 {
+		total += float64(tc.Frames) / tc.FrameRate
+	}
+	return total
 }
 
 // ---------------------------------------------------------------------------
