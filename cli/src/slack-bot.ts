@@ -46,6 +46,15 @@ interface ClaudeResult {
   permission_denials?: unknown[];
 }
 
+interface SlackFile {
+  id: string;
+  name?: string;
+  mimetype?: string;
+  size?: number;
+  url_private?: string;
+  url_private_download?: string;
+}
+
 interface IncomingMessage {
   text?: string;
   ts: string;
@@ -54,6 +63,27 @@ interface IncomingMessage {
   subtype?: string;
   bot_id?: string;
   user?: string;
+  files?: SlackFile[];
+}
+
+/**
+ * Describe any attached files in the prompt text handed to `claude`, so it
+ * can call premiere_fetch_slack_attachment with the right URL/name. Slack
+ * message events carry a `files[]` array with a url_private the MCP server
+ * downloads directly (given SLACK_BOT_TOKEN) -- the bot itself never fetches
+ * or decodes the bytes, it just passes the reference along.
+ */
+function describeAttachments(files: SlackFile[] | undefined): string {
+  if (!files || files.length === 0) return "";
+  const lines = files
+    .filter((f) => f.url_private)
+    .map((f) => `- name="${f.name ?? "unknown"}" url="${f.url_private}"`);
+  if (lines.length === 0) return "";
+  return (
+    "\n\n[Attached file(s) -- use premiere_fetch_slack_attachment with file_url " +
+    "and file_name to download and import each one:]\n" +
+    lines.join("\n")
+  );
 }
 
 // One Claude Code session per Slack thread. Keyed by the thread's root
@@ -144,9 +174,14 @@ async function main(): Promise<void> {
     const msg = message as IncomingMessage;
 
     if (msg.channel !== channelId) return;
-    if (msg.subtype || msg.bot_id) return; // ignore edits, joins, and our own messages
-    const text = msg.text?.trim();
-    if (!text) return;
+    if (msg.bot_id) return; // ignore our own messages
+    // Ignore edits, joins, etc., but not file_share -- Slack tags a message
+    // that carries an uploaded file with subtype "file_share", and dropping
+    // all subtypes here meant file uploads (with or without a caption) never
+    // reached the bot at all.
+    if (msg.subtype && msg.subtype !== "file_share") return;
+    const text = msg.text?.trim() ?? "";
+    if (!text && !msg.files?.length) return; // ignore truly empty events
 
     queue = queue
       .then(() => handleMessage(text, msg, say, client))
@@ -184,8 +219,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    const promptText =
+      (text || "Import the attached file(s) into the current Premiere Pro project.") +
+      describeAttachments(msg.files);
+
     try {
-      const result = await runClaudeWithRetry(text, threadKey);
+      const result = await runClaudeWithRetry(promptText, threadKey);
       if (result.session_id) sessionIdsByThread.set(threadKey, result.session_id);
 
       const sessionLabel = result.session_id ? result.session_id.slice(0, 8) : "?";

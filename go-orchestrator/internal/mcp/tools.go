@@ -146,6 +146,24 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 		makeImportFromGoogleDriveHandler(orch, logger),
 	)
 
+	// premiere_fetch_slack_attachment
+	s.AddTool(
+		gomcp.NewTool("premiere_fetch_slack_attachment",
+			gomcp.WithDescription("Download a file that was uploaded to a Slack thread and import it into the Premiere Pro project. Pass the url_private (or url_private_download) and name from the Slack message's files[] entry -- this server authenticates the download itself using its own SLACK_BOT_TOKEN (the same bot token cli/src/slack-bot.ts uses), so no connector or manual decoding is needed; the raw bytes are saved under a \"Slack Attachments\" folder next to the project and imported directly."),
+			gomcp.WithString("file_url",
+				gomcp.Required(),
+				gomcp.Description("The Slack file's url_private or url_private_download, from the message's files[] entry (must be an https://*.slack.com URL)."),
+			),
+			gomcp.WithString("file_name",
+				gomcp.Description("The Slack file's original name (the files[] entry's \"name\" field), used for the saved local filename including extension. If omitted, a name is derived from the download response or the URL."),
+			),
+			gomcp.WithString("target_bin",
+				gomcp.Description("Name of the project bin to import into (e.g. 'Footage'). If omitted, the file is imported into the project root."),
+			),
+		),
+		makeFetchSlackAttachmentHandler(orch, logger),
+	)
+
 	// premiere_place_clip
 	s.AddTool(
 		gomcp.NewTool("premiere_place_clip",
@@ -476,6 +494,26 @@ func makeImportFromGoogleDriveHandler(orch Orchestrator, logger *zap.Logger) ser
 		if err != nil {
 			logger.Error("import from google drive failed", zap.Error(err))
 			return gomcp.NewToolResultError(fmt.Sprintf("failed to import from google drive: %v", err)), nil
+		}
+		return toolResultJSON(result)
+	}
+}
+
+func makeFetchSlackAttachmentHandler(orch Orchestrator, logger *zap.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+		logger.Debug("handling premiere_fetch_slack_attachment")
+
+		fileURL := gomcp.ParseString(req, "file_url", "")
+		if fileURL == "" {
+			return gomcp.NewToolResultError("parameter 'file_url' is required"), nil
+		}
+		fileName := gomcp.ParseString(req, "file_name", "")
+		targetBin := gomcp.ParseString(req, "target_bin", "")
+
+		result, err := orch.FetchSlackAttachment(ctx, fileURL, fileName, targetBin)
+		if err != nil {
+			logger.Error("fetch slack attachment failed", zap.Error(err))
+			return gomcp.NewToolResultError(fmt.Sprintf("failed to fetch slack attachment: %v", err)), nil
 		}
 		return toolResultJSON(result)
 	}
