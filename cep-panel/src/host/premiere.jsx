@@ -1105,9 +1105,12 @@ function exportFrame(outputPath, format) {
         if (format === "JPG") { format = "JPEG"; }
         if (format !== "PNG" && format !== "JPEG") { format = "PNG"; }
 
-        // seq.exportFramePNG/JPEG were removed in newer Premiere, and the QE
-        // exporter only dumps the (often stale) program-monitor cache. Render
-        // the frame fresh with the in-process encoder using a still preset.
+        // seq.exportFramePNG/JPEG were removed in newer Premiere, and on
+        // 2026 exportAsMediaDirect with a still preset returns "No Error"
+        // without ever writing a file. The one render path verified working
+        // is the AME queue (encodeSequence + startBatch) -- queue a single
+        // in-to-out frame there and let the CALLER poll for the file
+        // (polling here with $.sleep blocks the whole ExtendScript engine).
         var contents = app.path + "Contents/";
         var presetMap = {
             "PNG": "MediaIO/systempresets/3F3F3F3F_504E4720/PNG Sequence (Match Source).epr",
@@ -1125,54 +1128,52 @@ function exportFrame(outputPath, format) {
             return _err("No still-image export preset available for format " + format);
         }
 
+        var encoder = app.encoder;
+        if (!encoder) {
+            return _err("app.encoder is unavailable; cannot render a frame");
+        }
+        try { encoder.launchEncoder(); } catch (le) {}
+
         // Remove any stale file at the target path so a prior export's output
         // can't be mistaken for this one's.
         try { var staleTarget = new File(outPath); if (staleTarget.exists) { staleTarget.remove(); } } catch (se) {}
 
         // Capture the current playhead (CTI) as a single-frame in/out range,
-        // saving and restoring the user's existing in/out marks even if the
-        // export throws.
+        // restoring the user's existing in/out marks after queueing (AME
+        // snapshots the sequence when the job is queued).
         var time = seq.getPlayerPosition();
         var oneFrame = parseInt(seq.timebase, 10) || 10594584000;
         var savedIn = seq.getInPoint();
         var savedOut = seq.getOutPoint();
         seq.setInPoint(time.ticks);
         seq.setOutPoint(String(Number(time.ticks) + oneFrame));
-        var encResult;
+        var jobID;
         try {
-            encResult = seq.exportAsMediaDirect(outPath, preset, 1 /* in-to-out */);
+            jobID = encoder.encodeSequence(
+                seq,
+                outPath,
+                preset,
+                1,  // WorkAreaType: 1 = in to out
+                1   // removeOnCompletion
+            );
+            encoder.startBatch();
         } finally {
             try {
-                seq.setInPoint(_secondsToTime(savedIn).ticks);
-                seq.setOutPoint(_secondsToTime(savedOut).ticks);
+                seq.setInPoint(_secondsToTime(_timeToSeconds(savedIn)).ticks);
+                seq.setOutPoint(_secondsToTime(_timeToSeconds(savedOut)).ticks);
             } catch (re) { /* best-effort restore */ }
         }
 
-        // exportAsMediaDirect can return before the file is flushed to disk
-        // (observed: "No Error" returned immediately, file appears up to a
-        // couple seconds later). Poll briefly instead of checking once.
-        var finalPath = null;
-        var waitedMs = 0;
-        // Rendering one frame of a heavy sequence (4K, effects) can take
-        // well over the old 8s window; observed ~90s cold on a real project.
-        while (waitedMs < 45000) {
-            finalPath = _resolveExportedStill(outPath);
-            if (finalPath && File(finalPath).exists) break;
-            finalPath = null;
-            $.sleep(200);
-            waitedMs += 200;
-        }
-        if (!finalPath) {
-            return _err("Frame export produced no file after waiting " + waitedMs + "ms (encoder: " + encResult + ", preset: " + preset + ")");
-        }
-
         return _ok({
-            outputPath: finalPath,
+            outputPath: outPath,
             format: usedFallback ? "TGA" : format,
             requestedFormat: format,
             timeSeconds: _timeToSeconds(time),
-            encoder: encResult,
-            status: "frame_exported"
+            width: seq.frameSizeHorizontal || 0,
+            height: seq.frameSizeVertical || 0,
+            jobID: jobID || "queued",
+            status: "render_queued",
+            note: "AME renders asynchronously; poll for the output file (a numeric suffix before the extension is possible)."
         });
     } catch (e) {
         return _err("exportFrame failed: " + e.message);
@@ -24389,9 +24390,17 @@ function snapshotTimeline(sequenceIndex) {
         if (!app.project) return _err("No project open");
         var seqs = app.project.sequences;
         if (!seqs || seqs.numSequences === 0) return _err("No sequences in project");
-        var idx = (sequenceIndex !== undefined && sequenceIndex >= 0) ? sequenceIndex : 0;
-        if (idx >= seqs.numSequences) return _err("Sequence index out of range");
-        var seq = seqs[idx];
+        // Negative/absent index means the ACTIVE sequence -- the one the
+        // audit layer snapshots before a mutation -- not sequences[0].
+        var seq;
+        if (sequenceIndex === undefined || sequenceIndex === null || sequenceIndex === "" || parseInt(sequenceIndex, 10) < 0) {
+            seq = app.project.activeSequence;
+            if (!seq) return _err("No active sequence to snapshot");
+        } else {
+            var idx = parseInt(sequenceIndex, 10) || 0;
+            if (idx >= seqs.numSequences) return _err("Sequence index out of range");
+            seq = seqs[idx];
+        }
         var snapshot = {
             sequenceName: seq.name,
             sequenceID: seq.sequenceID || "",

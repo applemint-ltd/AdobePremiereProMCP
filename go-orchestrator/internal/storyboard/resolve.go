@@ -68,6 +68,21 @@ func Resolve(query string, items []Item) ResolvedClip {
 
 	for _, stage := range stages {
 		hits := match(stage)
+		// Multiple hits that all point at the SAME media file are duplicate
+		// imports of one asset, not an ambiguity — any of them places the
+		// same footage. Only genuinely different files need the user.
+		if len(hits) > 1 {
+			samePath := hits[0].MediaPath != ""
+			for _, h := range hits[1:] {
+				if h.MediaPath != hits[0].MediaPath {
+					samePath = false
+					break
+				}
+			}
+			if samePath {
+				hits = hits[:1]
+			}
+		}
 		if len(hits) == 1 {
 			rc.Found = true
 			rc.Index = hits[0].Index

@@ -75,12 +75,24 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	argsJSON, _ := json.Marshal(map[string]any{
 		"params": params,
 	})
-	// Single-frame renders can take minutes cold on heavy sequences.
+	// Single-frame renders can take minutes cold on heavy sequences. The
+	// host queues the render in AME; the file wait happens here.
 	ctx, cancel := context.WithTimeout(ctx, captureCallTimeout)
 	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("ExportFrame: %w", err)
+	}
+	var data struct {
+		OutputPath string `json:"output_path"`
+	}
+	_ = json.Unmarshal([]byte(result), &data)
+	if data.OutputPath != "" {
+		finalPath, err := awaitFrameFile(ctx, data.OutputPath)
+		if err != nil {
+			return nil, fmt.Errorf("ExportFrame: %w", err)
+		}
+		return &GenericExportResult{Status: "success", OutputPath: finalPath}, nil
 	}
 	return &GenericExportResult{Status: "success", OutputPath: result}, nil
 }
