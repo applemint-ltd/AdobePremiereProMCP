@@ -21,7 +21,10 @@ func registerCaptureTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 	s.AddTool(
 		gomcp.NewTool("premiere_capture_frame_base64",
 			gomcp.WithDescription("Capture the current frame at the playhead position and return it as a base64-encoded PNG image. "+
-				"The image is returned as an MCP image content block that the AI can visually inspect."),
+				"The image is returned as an MCP image content block that the AI can visually inspect. "+
+				"This is the reliable way to SEE the timeline on Premiere 2026 (renders via a still-export preset; takes up to ~8s per frame). "+
+				"Move the playhead first with premiere_set_playhead_position or premiere_go_to_timecode. "+
+				"Use it after edits to verify text/clips look right before telling the user something is done."),
 		),
 		captH(logger, "capture_frame_base64", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
 			result, err := orch.CaptureFrameAsBase64(ctx)

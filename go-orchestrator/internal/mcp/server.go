@@ -39,14 +39,16 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger,
 		// Registered after WithRecovery so panics recovered there still flow
 		// back through the audit middleware as errors and get recorded.
 		server.WithToolHandlerMiddleware(newAuditMiddleware(aud, snap, logger)),
-		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro through natural language. "+
-			"Available tool categories: project inspection, media scanning, timeline editing, "+
-			"script-to-edit pipeline, and export. "+
-			"Read config://premiere-instructions for detailed usage guidance."),
+		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro 2026 through a curated, "+
+			"verified-working tool set (project/media, timeline editing, captions, baked-PNG text, frame capture, real export). "+
+			"Every tool call is audit-logged; premiere_get_session_digest and premiere_what_changed explain what happened. "+
+			"On-screen text works ONLY via premiere_add_text_layer; captions ONLY via SRT import. "+
+			"Read config://premiere-instructions for the golden storyboard->cut->export workflow."),
 	)
 
 	registerTools(s, orchestrator, logger)
 	registerAuditTools(s, aud, snapshots, logger)
+	applyToolCuration(s, logger)
 	registerResources(s)
 	registerPrompts(s)
 

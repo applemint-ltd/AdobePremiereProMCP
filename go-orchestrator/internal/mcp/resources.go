@@ -64,36 +64,46 @@ func handlePremiereInstructions(
 		gomcp.TextResourceContents{
 			URI:      "config://premiere-instructions",
 			MIMEType: "text/plain",
-			Text: `You are controlling Adobe Premiere Pro via the PremierPro MCP server.
+			Text: `You are controlling Adobe Premiere Pro 2026 via the PremierPro MCP server.
+The exposed tool set is a curated, verified-working subset — trust it over
+memory of other Premiere scripting surfaces.
 
-Available tool categories:
-- Project Management: Open/save/close projects, import media, manage bins
-- Sequence/Timeline: Create sequences, navigate timeline, set in/out points
-- Clip Operations: Insert, overwrite, trim, split, move clips
-- Effects & Transitions: Apply effects, transitions, keyframes
-- Audio: Set levels, apply audio effects, mix tracks
-- Color Grading: Full Lumetri Color control (exposure, contrast, temperature, etc.)
-- Titles & Graphics: Add text, MOGRTs, captions, lower thirds
-- Export: Export in any format via AME or direct export
-- Workspace: Manage panels, workspaces, and UI layout
-- Playback: Control playback, scrub timeline, set playhead
-- AI Tools: Scan assets, parse scripts, auto-edit
-- Batch Operations: Bulk operations across multiple clips
-- Advanced Editing: Multi-camera, nesting, compound clips
-- Diagnostics: Check system state and troubleshoot issues
+THE GOLDEN WORKFLOW (storyboard + clips -> reviewable cut):
+ 1. premiere_ping — confirm the pipeline is alive; premiere_health_check for detail.
+ 2. premiere_get_project / premiere_new_project / premiere_open_project.
+ 3. Get media in: premiere_fetch_slack_attachment (Slack uploads),
+    premiere_import_media / premiere_import_files, premiere_scan_assets for folders.
+ 4. Build the cut: place clips by project-item with premiere_insert_clip /
+    premiere_overwrite_clip (non-ripple), trim with premiere_create_subclip /
+    premiere_trim_clip_end, transitions with premiere_add_transition.
+    premiere_parse_script parses narration/scripts; premiere_auto_edit runs
+    the script-to-timeline pipeline.
+ 5. Show your work: premiere_capture_frame_base64 for a frame of the timeline.
+ 6. Iterate with clip/audio/lumetri/transform tools.
+ 7. Export: premiere_export (semantic presets: h264_1080p, h264_4k, prores_422,
+    prores_4444, dnxhd, gif — or a real .epr path). Exports QUEUE in Adobe
+    Media Encoder; poll premiere_get_export_progress rather than assuming done.
+ 8. Explain what you did: premiere_get_session_digest ("what did you do?"),
+    premiere_what_changed (timeline diff since the last edit).
 
-Tips:
-- Always check if Premiere Pro is running first (premiere_is_running or premiere_ping)
-- Open a project before editing (premiere_open with project_path)
-- Create or select a sequence before clip operations
-- Use premiere_get_project to understand the current state
-- Use premiere_get_timeline to inspect what is on the active sequence
-- When placing clips, import media first with premiere_import_media
-- Export presets: h264_1080p, h264_4k, prores_422, prores_4444, dnxhd
-- Track indices are zero-based (first video track = 0)
-- Time positions are specified in seconds (floating point)
-- Use premiere_scan_assets to discover media files in a directory
-- Use premiere_auto_edit for fully automated script-to-edit pipeline`,
+PREMIERE 2026 HARD LIMITS (do not fight these):
+- On-screen text: scripted native/Essential Graphics text DOES NOT RENDER.
+  premiere_add_text_layer is the ONLY working text method — it bakes the text
+  to a PNG and places it as a clip. To change it, re-run the tool.
+- Subtitles: there is no auto-transcription. Captions come from an SRT file
+  (premiere_add_subtitles_from_srt) — native, editable, works.
+- Frame stills come from premiere_capture_frame_base64 / premiere_export_frame
+  (takes up to ~8s per frame; renders via a still-export preset).
+- Scene detection: premiere_detect_scene_changes (real ffmpeg analysis of a
+  media file). There is no working silence detection.
+
+CONVENTIONS:
+- Track indices are zero-based; video track 0 = V1.
+- Time positions are seconds (floating point).
+- Every tool call is audit-logged with a correlation ID; failures are honest —
+  an error means it did not happen, an ok means it did.
+- When talking to end users (e.g. via Slack), describe changes in plain
+  language: clip names and m:ss times, never track indices or raw seconds.`,
 		},
 	}, nil
 }
@@ -106,150 +116,57 @@ func handleToolCategories(
 		gomcp.TextResourceContents{
 			URI:      "config://tool-categories",
 			MIMEType: "text/plain",
-			Text: `PremierPro MCP Tool Categories
-==============================
+			Text: `PremierPro MCP Tool Categories (curated for Premiere Pro 2026)
+==============================================================
 
-1. Application (app_tools)
-   Launch, close, and check if Premiere Pro is running.
-   Tools: premiere_open, premiere_close, premiere_is_running
+By default only a verified core set (~185 tools) is exposed. Categories:
 
-2. Project Management (project_tools)
-   Inspect and manage the current project state.
-   Tools: premiere_ping, premiere_get_project, premiere_get_project_info,
-          premiere_list_project_items, premiere_get_item_metadata,
-          premiere_create_bin, premiere_move_items, premiere_consolidate,
-          premiere_get_project_settings
+1.  Connection & health — premiere_ping, premiere_is_running, premiere_open,
+    premiere_close, premiere_health_check, premiere_test_bridge_connection
+2.  Project & bins — premiere_get_project(_info), premiere_new/open/save/
+    close_project, premiere_create/rename/delete_bin, premiere_get_project_items,
+    premiere_find_project_items
+3.  Import & media — premiere_import_media/files/folder,
+    premiere_fetch_slack_attachment (Slack uploads), premiere_scan_assets,
+    premiere_get_media_info, premiere_relink_media, premiere_replace_media
+4.  Sequences & tracks — premiere_create_sequence(_from_clips),
+    premiere_get/set_active_sequence, premiere_get_sequence_list,
+    premiere_add/delete_video/audio_track, premiere_get_timeline
+5.  Clip editing — premiere_insert/overwrite/place_clip, premiere_remove/
+    move/duplicate_clip, premiere_razor_clip, premiere_trim_clip_start/end,
+    premiere_ripple/roll_trim, premiere_slip/slide_clip, premiere_set_clip_speed,
+    premiere_create_subclip, premiere_get_all_clips, premiere_find_gaps,
+    premiere_close_(all_)gap(s)
+6.  Transitions — premiere_add_transition (+video/audio variants),
+    premiere_add_audio_crossfade, premiere_get_available_transitions
+7.  Audio — premiere_set_audio_gain/level, premiere_normalize_(all_)audio,
+    premiere_fade_in/out, volume keyframes, track mute/solo/volume,
+    premiere_add_music_bed, premiere_duck_music_under_dialogue
+8.  Color (Lumetri) — premiere_lumetri_set_* (exposure/contrast/temperature/...),
+    premiere_lumetri_apply/remove_lut, premiere_lumetri_auto_color/reset/get_all
+9.  Transform — premiere_set_position/scale/rotation/opacity/crop,
+    premiere_fit_clip_to_frame, premiere_center_clip, premiere_scale_all_clips_to_frame
+10. Markers & metadata — sequence/clip markers, item metadata, labels, notes
+11. Text & captions — premiere_add_text_layer (baked-PNG text: the ONLY
+    working text on 2026), premiere_add_subtitles_from_srt, caption editing
+12. Preview & analysis — premiere_capture_frame_base64, premiere_export_frame,
+    premiere_detect_scene_changes, playhead/timecode navigation
+13. Export — premiere_export (the real path; AME-queued), premiere_export_direct,
+    premiere_export_via_ame, premiere_get_exporters/export_presets/export_progress
+14. Assembly & pipeline — premiere_assemble_from_csv/edl/folder_order,
+    premiere_create_slideshow, premiere_auto_edit, premiere_parse_script
+15. State, audit & safety — premiere_dump_project/sequence_state,
+    premiere_snapshot_timeline, premiere_undo/redo, premiere_get_audit_log,
+    premiere_what_changed, premiere_diff_timeline, premiere_get_session_digest
 
-3. Sequence / Timeline (sequence_tools)
-   Create, configure, and navigate sequences.
-   Tools: premiere_create_sequence, premiere_list_sequences,
-          premiere_set_active_sequence, premiere_get_sequence_settings,
-          premiere_set_sequence_settings, premiere_get_playhead,
-          premiere_set_playhead, premiere_get_in_out_points,
-          premiere_set_in_out_points, premiere_clear_in_out_points,
-          premiere_add_marker, premiere_list_markers
-
-4. Clip Operations (clip_tools)
-   Place, move, trim, split, and remove clips on the timeline.
-   Tools: premiere_place_clip, premiere_remove_clip, premiere_import_media,
-          premiere_move_clip, premiere_trim_clip, premiere_split_clip,
-          premiere_get_clip_properties, premiere_set_clip_enabled
-
-5. Effects & Transitions (effects_tools)
-   Apply video/audio effects, transitions, and keyframes.
-   Tools: premiere_add_transition, premiere_apply_effect,
-          premiere_list_effects, premiere_get_effect_properties,
-          premiere_set_effect_property, premiere_remove_effect,
-          premiere_add_keyframe, premiere_list_keyframes
-
-6. Audio (audio_tools, audio_advanced_tools)
-   Control audio levels, effects, and mixing.
-   Tools: premiere_set_audio_level, premiere_apply_audio_effect,
-          premiere_get_audio_mix, premiere_set_audio_pan,
-          premiere_mute_track, premiere_solo_track,
-          premiere_normalize_audio, premiere_set_audio_gain
-
-7. Color Grading (color_tools)
-   Full Lumetri Color control panel.
-   Tools: premiere_lumetri_get_all, premiere_lumetri_set_exposure,
-          premiere_lumetri_set_contrast, premiere_lumetri_set_highlights,
-          premiere_lumetri_set_shadows, premiere_lumetri_set_whites,
-          premiere_lumetri_set_blacks, premiere_lumetri_set_temperature,
-          premiere_lumetri_set_tint, premiere_lumetri_set_saturation,
-          premiere_lumetri_set_vibrance, premiere_lumetri_apply_lut
-
-8. Titles & Graphics (graphics_tools, motion_graphics_tools)
-   Add text overlays, titles, MOGRTs, and captions.
-   Tools: premiere_add_text, premiere_add_mogrt,
-          premiere_set_mogrt_property, premiere_add_caption,
-          premiere_add_lower_third
-
-9. Export (export_tools, encoding_tools, delivery_tools)
-   Export sequences in various formats.
-   Tools: premiere_export, premiere_export_direct,
-          premiere_export_via_ame, premiere_export_frame,
-          premiere_export_aaf, premiere_export_omf,
-          premiere_export_audio_only, premiere_render_preview,
-          premiere_list_exporters, premiere_list_presets
-
-10. Workspace & UI (workspace_tools, ui_tools, panel_ops_tools)
-    Manage workspace layout, panels, and UI state.
-    Tools: premiere_set_workspace, premiere_open_panel,
-           premiere_get_workspace, premiere_resize_panel
-
-11. Playback (playback_tools)
-    Control playback and transport.
-    Tools: premiere_play, premiere_pause, premiere_stop,
-           premiere_step_forward, premiere_step_backward,
-           premiere_shuttle
-
-12. AI-Powered (ai_tools)
-    Automated editing using AI intelligence.
-    Tools: premiere_scan_assets, premiere_parse_script,
-           premiere_auto_edit
-
-13. Transform (transform_tools)
-    Position, scale, rotate, and opacity of clips.
-    Tools: premiere_set_position, premiere_set_scale,
-           premiere_set_rotation, premiere_set_opacity,
-           premiere_set_anchor_point
-
-14. Metadata (metadata_tools)
-    Read and write clip and project metadata.
-    Tools: premiere_get_metadata, premiere_set_metadata
-
-15. Batch Operations (batch_tools)
-    Bulk operations across multiple clips or tracks.
-    Tools: premiere_batch_apply_effect, premiere_batch_set_property,
-           premiere_batch_export
-
-16. Advanced Editing (advanced_edit_tools)
-    Multi-cam, nesting, and compound clips.
-    Tools: premiere_nest_clips, premiere_create_multicam,
-           premiere_flatten_multicam, premiere_create_subclip
-
-17. Templates (template_tools)
-    Project and sequence templates.
-    Tools: premiere_apply_template, premiere_save_template,
-           premiere_list_templates
-
-18. Preferences (preferences_tools)
-    Application preferences and settings.
-    Tools: premiere_get_preferences, premiere_set_preference
-
-19. Collaboration (collaboration_tools)
-    Team workflows and shared projects.
-    Tools: premiere_lock_project, premiere_unlock_project
-
-20. Diagnostics & Monitoring (diagnostics_tools, monitoring_tools)
-    System health checks and performance monitoring.
-    Tools: premiere_diagnostics, premiere_get_system_info,
-           premiere_get_performance_stats
-
-21. Scripting (scripting_tools)
-    Execute custom ExtendScript in Premiere Pro.
-    Tools: premiere_run_extendscript
-
-22. Analytics (analytics_tools)
-    Project analytics and statistics.
-    Tools: premiere_get_project_stats, premiere_get_timeline_stats
-
-23. Integration (integration_tools)
-    Integrations with After Effects, Audition, etc.
-    Tools: premiere_dynamic_link_ae, premiere_send_to_audition
-
-24. Camera & Immersive (camera_tools, immersive_tools)
-    VR/360 video and camera metadata.
-    Tools: premiere_set_vr_projection, premiere_get_camera_metadata
-
-25. Versioning (versioning_tools)
-    Project versioning and snapshots.
-    Tools: premiere_create_snapshot, premiere_list_snapshots,
-           premiere_restore_snapshot
-
-26. Media Browser (media_browser_tools)
-    Browse and search for media.
-    Tools: premiere_browse_media, premiere_search_stock`,
+Not exposed by default:
+- Broken-on-2026 tools (missing host functions, removed APIs like
+  exportFramePNG, fake-success placeholders) are never registered.
+- Arbitrary-execution escape hatches (execute_extendscript, execute_system_command,
+  file writers, schedulers) require MCP_ENABLE_ESCAPE_HATCHES=1.
+- The remaining long tail (UI/workspace/panel/menu control, QE-heavy tools,
+  Team Projects, VR/HDR, platform export variants, deep analytics reports)
+  requires MCP_EXPOSE_ALL_TOOLS=1. Neither flag belongs on the shared hub.`,
 		},
 	}, nil
 }

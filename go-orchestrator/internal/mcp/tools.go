@@ -313,7 +313,7 @@ func registerExportTools(s *server.MCPServer, orch Orchestrator, logger *zap.Log
 	// premiere_export
 	s.AddTool(
 		gomcp.NewTool("premiere_export",
-			gomcp.WithDescription("Export a sequence to a media file using a built-in preset. This is the simplest export option. For more control (custom .epr preset files, work area selection), use premiere_export_direct. For asynchronous export via Adobe Media Encoder, use premiere_export_via_ame."),
+			gomcp.WithDescription("Export a sequence to a media file using a built-in preset. This is the ONLY real export path — it queues the job in Adobe Media Encoder, so a success result means QUEUED, not finished. Poll premiere_get_export_progress (or check the output file) before telling the user the export is done; renders can take minutes for long sequences and AME may need a few seconds to launch. For custom .epr presets use premiere_export_direct; for explicit AME control use premiere_export_via_ame."),
 			gomcp.WithString("sequence_id",
 				gomcp.Description("Unique identifier of the sequence to export. If omitted, exports the currently active sequence. Obtain IDs from premiere_get_project."),
 			),
