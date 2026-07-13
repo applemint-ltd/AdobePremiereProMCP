@@ -42,9 +42,21 @@
     var serverPort = DEFAULT_PORT;
     var autoScroll = true;
 
+    // __dirname here is sometimes the panel's own folder (.../cep-panel/src)
+    // and sometimes the extension bundle root (.../cep-panel), depending on
+    // how CEP's Node integration loaded this script. Probe both so host
+    // script loading doesn't silently fail when the base differs.
+    function resolveHostScript(name) {
+        var direct = path.join(__dirname, "host", name).replace(/\\/g, "/");
+        if (fs.existsSync(direct)) return direct;
+        var viaSrc = path.join(__dirname, "src", "host", name).replace(/\\/g, "/");
+        if (fs.existsSync(viaSrc)) return viaSrc;
+        return direct; // fall back to the original guess; caller will log the failure
+    }
+
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = path.join(__dirname, "host", "premiere.jsx").replace(/\\/g, "/");
+    var premiereJsxPath = resolveHostScript("premiere.jsx");
 
     // Stats tracking
     var stats = {
@@ -278,7 +290,7 @@
         addTransition:      function (p)       { return "addTransition(" + (p.trackIndex || 0) + "," + (p.clipIndex || 0) + "," + escapeForEval(p.transitionName || "") + "," + (p.duration || 1) + ")"; },
         addText:            function (p)       { return "addText(" + escapeForEval(p.text || "") + "," + (p.trackIndex || 0) + "," + (p.startTime || 0) + "," + (p.duration || 5) + ")"; },
         setAudioLevel:      function (p)       { return "setAudioLevel(" + (p.trackIndex || 0) + "," + (p.clipIndex || 0) + "," + (p.levelDb || 0) + ")"; },
-        exportSequence:     function (p)       { return "exportSequence(" + escapeForEval(p.outputPath || "") + "," + escapeForEval(p.presetPath || "") + ")"; },
+        exportSequence:     function (p)       { return "exportSequence(" + escapeForEval(p.outputPath || "") + "," + escapeForEval(p.preset || p.presetPath || "") + ")"; },
         evalCommand:        function (p)       {
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
@@ -543,7 +555,7 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = path.join(__dirname, "host", "core.jsx").replace(/\\/g, "/");
+        var corePath = resolveHostScript("core.jsx");
         log("Loading core ExtendScript: " + corePath);
         csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
             if (result === "EvalScript error.") {

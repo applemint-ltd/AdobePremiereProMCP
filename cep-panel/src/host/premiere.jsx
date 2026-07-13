@@ -758,6 +758,72 @@ function muteVideoTrack(trackIndex, muted) { try { var r = _getVideoTrack(trackI
 function setVideoTrackTarget(trackIndex, targeted) { try { var r = _getVideoTrack(trackIndex); if (typeof r === "string") return r; var tv = (targeted===true||targeted==="true"||targeted===1)?true:false; if (r.track.setTargeted) r.track.setTargeted(tv, true); else return _err("Track targeting not available"); return _ok({trackIndex:parseInt(trackIndex,10)||0, targeted:tv}); } catch(e) { return _err("setVideoTrackTarget failed: "+e.message); } }
 
 // ---------------------------------------------------------------------------
+// _waitForExporters(encoder)
+// app.encoder.getExporters() comes back empty until Adobe Media Encoder has
+// actually finished launching -- calling it right after launchEncoder()
+// (which only triggers the launch and returns immediately) is why
+// getExporters/getExportPresets/exportSequence used to see 0 exporters.
+// Poll for a bounded time instead of assuming it's ready synchronously.
+// ---------------------------------------------------------------------------
+function _waitForExporters(encoder) {
+    encoder.launchEncoder();
+    var collection = encoder.getExporters();
+    var attempts = 0;
+    while ((!collection || collection.numExporters === 0) && attempts < 20) {
+        $.sleep(500);
+        collection = encoder.getExporters();
+        attempts++;
+    }
+    return collection;
+}
+
+// ---------------------------------------------------------------------------
+// _resolvePresetPath(preset, encoder)
+// Accepts either a real .epr preset file path (used as-is) or one of the
+// semantic preset keys premiere_export exposes (h264_1080p, h264_4k,
+// prores_422, prores_4444, dnxhd, gif) and resolves it to a real preset path
+// by matching against Media Encoder's actual installed exporters/presets.
+// Never falls back to a hardcoded absolute path -- preset bundle locations
+// are app-version- and OS-specific and go stale (e.g. a path baked in for
+// "Adobe Media Encoder 2024" silently failing on a 2026 install).
+// ---------------------------------------------------------------------------
+function _resolvePresetPath(preset, encoder) {
+    if (!preset) preset = "h264_1080p";
+    if (/\.epr$/i.test(preset)) return preset; // already a real preset file path
+
+    var PRESET_HINTS = {
+        h264_1080p:  { exporter: "h.264", preset: "match source - high bitrate" },
+        h264_4k:     { exporter: "h.264", preset: "match source - high bitrate" },
+        prores_422:  { exporter: "quicktime", preset: "apple prores 422" },
+        prores_4444: { exporter: "quicktime", preset: "apple prores 4444" },
+        dnxhd:       { exporter: "mxf", preset: "dnxhd" },
+        gif:         { exporter: "animated gif", preset: "" }
+    };
+    var hint = PRESET_HINTS[preset] || null;
+
+    var collection = _waitForExporters(encoder);
+    if (!collection || collection.numExporters === 0) return null;
+
+    var fallback = null;
+    for (var i = 0; i < collection.numExporters; i++) {
+        var exp = collection[i];
+        var expName = (exp.name || "").toLowerCase();
+        if (hint && expName.indexOf(hint.exporter) === -1) continue;
+        if (!exp.getPresets) continue;
+        var presets = exp.getPresets();
+        for (var j = 0; j < presets.numPresets; j++) {
+            var p = presets[j];
+            if (!fallback) fallback = p.path;
+            var pName = (p.name || "").toLowerCase();
+            if (!hint || hint.preset === "" || pName.indexOf(hint.preset) !== -1) {
+                return p.path;
+            }
+        }
+    }
+    return fallback; // best-effort: any preset from a matching (or any) exporter
+}
+
+// ---------------------------------------------------------------------------
 // exportSequence(outputPath, presetPath)
 // ---------------------------------------------------------------------------
 function exportSequence(outputPath, presetPath) {
@@ -779,18 +845,14 @@ function exportSequence(outputPath, presetPath) {
         var encoder = app.encoder;
 
         if (encoder) {
-            // Start AME if it is not already running
-            encoder.launchEncoder();
-
-            // Determine the export preset
-            var preset = presetPath || "";
-
-            if (preset === "") {
-                // Use a built-in preset path as fallback
-                // Common preset locations:
-                // macOS: /Applications/Adobe Media Encoder .../MediaIO/systempresets/
-                // Windows: C:\Program Files\Adobe\Adobe Media Encoder ...\MediaIO\systempresets\
-                preset = "/Applications/Adobe Media Encoder 2024/Adobe Media Encoder 2024.app/Contents/MediaIO/systempresets/4B434D58_48323634/Match Source - High bitrate.epr";
+            // Resolve the caller's preset (a semantic key like "h264_1080p"
+            // or a real .epr path) against Media Encoder's actual installed
+            // exporters, waiting for AME to finish launching if needed. No
+            // hardcoded fallback path -- those go stale across app versions
+            // and OSes and fail silently.
+            var preset = _resolvePresetPath(presetPath, encoder);
+            if (!preset) {
+                return _err("Could not resolve an export preset -- Adobe Media Encoder returned no exporters/presets. Make sure AME is installed and try again in a few seconds.");
             }
 
             // Queue the export job in AME
@@ -813,17 +875,23 @@ function exportSequence(outputPath, presetPath) {
                 sequenceName: seq.name || ""
             });
         } else {
-            // Fallback: use direct export if encoder is not available
-            // This blocks until the export is complete
+            // Fallback: use direct export if encoder is not available at all.
+            // This blocks until the export is complete, and exportAsMediaDirect
+            // requires a real .epr path -- without an encoder object there is
+            // no way to resolve a semantic preset key, so require a real path.
+            if (!presetPath || !/\.epr$/i.test(presetPath)) {
+                return _err("Adobe Media Encoder is unavailable and no real .epr preset path was provided; a semantic preset name cannot be resolved without it.");
+            }
+
             seq.exportAsMediaDirect(
                 outputPath,
-                presetPath || "",
+                presetPath,
                 0  // WorkAreaType
             );
 
             return _ok({
                 outputPath: outputPath,
-                presetPath: presetPath || "default",
+                presetPath: presetPath,
                 status: "export_complete",
                 sequenceName: seq.name || ""
             });
@@ -1257,7 +1325,7 @@ function getExporters() {
         var exporters = [];
 
         if (encoder.getExporters) {
-            var exporterCollection = encoder.getExporters();
+            var exporterCollection = _waitForExporters(encoder);
             for (var i = 0; i < exporterCollection.numExporters; i++) {
                 var exp = exporterCollection[i];
                 exporters.push({
@@ -1295,7 +1363,7 @@ function getExportPresets(exporterIndex) {
             return _err("encoder.getExporters is not available");
         }
 
-        var exporterCollection = encoder.getExporters();
+        var exporterCollection = _waitForExporters(encoder);
         if (exporterIndex >= exporterCollection.numExporters) {
             return _err("Exporter index " + exporterIndex + " out of range (have " + exporterCollection.numExporters + ")");
         }

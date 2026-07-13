@@ -4,11 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
 // Extended Export & Render operations
 // ---------------------------------------------------------------------------
+
+// exportCallTimeout overrides the default 30s EvalCommand deadline for
+// operations that block until a real render/AME-launch completes. callCtx()
+// on the premiere bridge client only imposes its own timeout when the parent
+// context has no deadline yet, so setting one here before calling EvalCommand
+// flows through unchanged.
+const exportCallTimeout = 10 * time.Minute
 
 // ExportDirect performs a synchronous export using exportAsMediaDirect.
 func (e *Engine) ExportDirect(ctx context.Context, params *ExportDirectParams) (*GenericExportResult, error) {
@@ -24,6 +32,8 @@ func (e *Engine) ExportDirect(ctx context.Context, params *ExportDirectParams) (
 	argsJSON, _ := json.Marshal(map[string]any{
 		"params": params,
 	})
+	ctx, cancel := context.WithTimeout(ctx, exportCallTimeout)
+	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "exportDirect", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("ExportDirect: %w", err)
@@ -45,6 +55,8 @@ func (e *Engine) ExportViaAME(ctx context.Context, params *ExportViaAMEParams) (
 	argsJSON, _ := json.Marshal(map[string]any{
 		"params": params,
 	})
+	ctx, cancel := context.WithTimeout(ctx, exportCallTimeout)
+	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "exportViaAME", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("ExportViaAME: %w", err)
@@ -136,15 +148,25 @@ func (e *Engine) ExportProjectAsXML(ctx context.Context, outputPath string) (*Ge
 	return &GenericExportResult{Status: "success", OutputPath: result}, nil
 }
 
-// GetExporters lists all available exporters.
+// GetExporters lists all available exporters. Launching Adobe Media Encoder
+// takes a few seconds, so this uses the same extended timeout as the actual
+// export calls -- the ExtendScript side (getExporters in premiere.jsx) waits
+// for the encoder to come up before reporting an empty list.
 func (e *Engine) GetExporters(ctx context.Context) (*ExporterListResult, error) {
 	argsJSON, _ := json.Marshal(map[string]any{})
+	ctx, cancel := context.WithTimeout(ctx, exportCallTimeout)
+	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "getExporters", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("GetExporters: %w", err)
 	}
-	_ = result
-	return &ExporterListResult{}, nil
+	var out ExporterListResult
+	if result != "" {
+		if err := json.Unmarshal([]byte(result), &out); err != nil {
+			return nil, fmt.Errorf("GetExporters: parse result: %w", err)
+		}
+	}
+	return &out, nil
 }
 
 // GetExportPresets returns presets for a specific exporter.
@@ -152,12 +174,19 @@ func (e *Engine) GetExportPresets(ctx context.Context, exporterIndex int) (*Expo
 	argsJSON, _ := json.Marshal(map[string]any{
 		"exporterIndex": exporterIndex,
 	})
+	ctx, cancel := context.WithTimeout(ctx, exportCallTimeout)
+	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "getExportPresets", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("GetExportPresets: %w", err)
 	}
-	_ = result
-	return &ExportPresetListResult{}, nil
+	var out ExportPresetListResult
+	if result != "" {
+		if err := json.Unmarshal([]byte(result), &out); err != nil {
+			return nil, fmt.Errorf("GetExportPresets: parse result: %w", err)
+		}
+	}
+	return &out, nil
 }
 
 // StartAMEBatch starts the Adobe Media Encoder render queue.

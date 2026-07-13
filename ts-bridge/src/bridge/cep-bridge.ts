@@ -97,6 +97,17 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 5_000;
 
+// exportAsMediaDirect blocks the ExtendScript engine until the whole render
+// finishes, and cold-launching Adobe Media Encoder to resolve a preset can
+// itself take several seconds -- both routinely exceed the default 30s
+// command timeout with no file ever getting written. These functions get a
+// much longer timeout instead.
+const LONG_RUNNING_COMMAND_TIMEOUT_MS = 600_000;
+const LONG_RUNNING_EVAL_FUNCTIONS = new Set(["exportDirect", "exportViaAME"]);
+// Queues into AME rather than blocking on the render, but still needs to
+// wait for AME to launch and a preset to resolve -- longer than default.
+const EXPORT_SEQUENCE_TIMEOUT_MS = 120_000;
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -369,7 +380,7 @@ export class CepBridge implements PremiereBridge {
     outputPath: string;
     preset: ExportPreset;
   }): Promise<ExportResult> {
-    return this.send<ExportResult>("exportSequence", params);
+    return this.send<ExportResult>("exportSequence", params, EXPORT_SEQUENCE_TIMEOUT_MS);
   }
 
   // -----------------------------------------------------------------------
@@ -390,10 +401,17 @@ export class CepBridge implements PremiereBridge {
 
   async evalCommand(functionName: string, argsJson: string): Promise<EvalCommandResult> {
     try {
-      const result = await this.send<unknown>("evalCommand", {
-        function_name: functionName,
-        args_json: argsJson,
-      });
+      const timeoutMs = LONG_RUNNING_EVAL_FUNCTIONS.has(functionName)
+        ? LONG_RUNNING_COMMAND_TIMEOUT_MS
+        : undefined;
+      const result = await this.send<unknown>(
+        "evalCommand",
+        {
+          function_name: functionName,
+          args_json: argsJson,
+        },
+        timeoutMs,
+      );
       return {
         resultJson: typeof result === "string" ? result : JSON.stringify(result),
         isError: false,
@@ -456,6 +474,7 @@ export class CepBridge implements PremiereBridge {
   private send<T = unknown>(
     action: string,
     params: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -468,12 +487,13 @@ export class CepBridge implements PremiereBridge {
       }
 
       const requestId = randomUUID();
+      const effectiveTimeoutMs = timeoutMs ?? this.commandTimeoutMs;
 
       // Set up a timeout for this individual request.
       const timer = setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        reject(new CepTimeoutError(action, this.commandTimeoutMs));
-      }, this.commandTimeoutMs);
+        reject(new CepTimeoutError(action, effectiveTimeoutMs));
+      }, effectiveTimeoutMs);
 
       this.pendingRequests.set(requestId, {
         resolve: resolve as (value: unknown) => void,

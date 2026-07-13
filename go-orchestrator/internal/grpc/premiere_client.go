@@ -385,9 +385,12 @@ func (c *PremiereBridgeClient) SetAudioLevel(ctx context.Context, params SetAudi
 // Export
 // ---------------------------------------------------------------------------
 
-// ExportSequence starts an export of the given sequence.
+// ExportSequence starts an export of the given sequence. This only queues
+// the job in Adobe Media Encoder rather than blocking on the render itself,
+// but launching AME cold and resolving a matching preset can take longer
+// than the default call timeout, so it gets a more generous deadline.
 func (c *PremiereBridgeClient) ExportSequence(ctx context.Context, params ExportSequenceParams) (*ExportSequenceResult, error) {
-	ctx, cancel := c.callCtx(ctx)
+	ctx, cancel := context.WithTimeout(ctx, c.callTimeout*4)
 	defer cancel()
 
 	c.logger.Debug("ExportSequence",
