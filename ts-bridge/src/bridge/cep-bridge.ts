@@ -62,6 +62,33 @@ export class CepCommandError extends Error {
   }
 }
 
+/**
+ * Every ExtendScript host function returns a `{success, data|error}`
+ * envelope. The typed action handlers (createSequence, placeClip, ...)
+ * previously resolved that envelope as-is, so callers reading fields like
+ * `sequenceId` off the top level always saw empty values — commands looked
+ * successful while returning nothing. Unwrap typed-action responses here;
+ * a `success:false` envelope becomes a rejection instead of a hollow
+ * success. Non-envelope payloads pass through untouched.
+ */
+function unwrapHostEnvelope(action: string, result: unknown): unknown {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "success" in result &&
+    typeof (result as { success: unknown }).success === "boolean"
+  ) {
+    const env = result as { success: boolean; data?: unknown; error?: string };
+    if (!env.success) {
+      throw new CepCommandError(action, env.error ?? "ExtendScript reported failure");
+    }
+    if ("data" in env) {
+      return env.data;
+    }
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -87,6 +114,7 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  action: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -521,6 +549,7 @@ export class CepBridge implements PremiereBridge {
         resolve: resolve as (value: unknown) => void,
         reject,
         timer,
+        action,
       });
 
       const message: CepRequest = { action, params, requestId, correlationId };
@@ -572,8 +601,17 @@ export class CepBridge implements PremiereBridge {
       pending.reject(
         new CepCommandError(requestId, response.error),
       );
-    } else {
+    } else if (pending.action === "evalCommand") {
+      // evalCommand envelopes are unwrapped (and key-normalized) on the Go
+      // side; unwrapping here too would strip the envelope the Go parser
+      // keys its camelCase->snake_case normalization on.
       pending.resolve(response.result);
+    } else {
+      try {
+        pending.resolve(unwrapHostEnvelope(pending.action, response.result));
+      } catch (err) {
+        pending.reject(err instanceof Error ? err : new Error(String(err)));
+      }
     }
   }
 

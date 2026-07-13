@@ -194,18 +194,25 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 	report.Warnings = append(report.Warnings, plan.Warnings...)
 
 	// --- Sequence ---
-	seqParams := &CreateSequenceParams{
-		Name:       plan.Sequence.Name,
-		Resolution: Resolution{Width: 1920, Height: 1080},
-		FrameRate:  30,
+	// Created via the EvalCommand path (host createSequence takes flat
+	// {name,width,height,fps}); it goes through the honest envelope unwrap,
+	// unlike the typed RPC whose bridge handlers historically returned
+	// hollow results. The new sequence becomes the active one, which every
+	// subsequent placement targets.
+	seqArgs := map[string]any{
+		"name":   plan.Sequence.Name,
+		"width":  1920,
+		"height": 1080,
+		"fps":    30,
 	}
 	if plan.Sequence.Width > 0 && plan.Sequence.Height > 0 {
-		seqParams.Resolution = Resolution{Width: uint32(plan.Sequence.Width), Height: uint32(plan.Sequence.Height)}
+		seqArgs["width"], seqArgs["height"] = plan.Sequence.Width, plan.Sequence.Height
 	}
 	if plan.Sequence.FPS > 0 {
-		seqParams.FrameRate = plan.Sequence.FPS
+		seqArgs["fps"] = plan.Sequence.FPS
 	}
-	if _, err := e.CreateSequence(ctx, seqParams); err != nil {
+	seqJSON, _ := json.Marshal(seqArgs)
+	if _, err := e.premiere.EvalCommand(ctx, "createSequence", string(seqJSON)); err != nil {
 		return nil, fmt.Errorf("could not create sequence %q: %w", plan.Sequence.Name, err)
 	}
 

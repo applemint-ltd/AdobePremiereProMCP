@@ -221,8 +221,10 @@ function createSequence(paramsJson) {
             return _err("No project is open");
         }
 
-        // Use the new sequence preset creation if available
-        var seqID = app.project.createNewSequence(name);
+        // createNewSequence requires BOTH arguments on Premiere 2026 -- the
+        // one-arg call silently created nothing (verified live); the second
+        // arg is a placeholder ID string.
+        var seqID = app.project.createNewSequence(name, "");
 
         if (seqID) {
             // Try to set properties on the newly created sequence
