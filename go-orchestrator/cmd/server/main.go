@@ -111,10 +111,6 @@ func run() error {
 		return res.Message, nil
 	}
 	snapshots := audit.NewSnapshotStore(cfg.AuditDir, cfg.SessionTag, captureTimeline)
-	var snapshotter mcp.Snapshotter
-	if cfg.AutoSnapshot && snapshots != nil {
-		snapshotter = snapshots
-	}
 	if auditor != nil {
 		logger.Info("audit trail enabled",
 			zap.String("dir", cfg.AuditDir),
@@ -124,7 +120,7 @@ func run() error {
 	}
 
 	// ── MCP Server ────────────────────────────────────────────────────
-	mcpSrv := mcp.NewMCPServer(engine, version, logger, auditor, snapshotter)
+	mcpSrv := mcp.NewMCPServer(engine, version, logger, auditor, snapshots, cfg.AutoSnapshot)
 
 	// ── Serve ─────────────────────────────────────────────────────────
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

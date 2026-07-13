@@ -20,21 +20,21 @@ type stubOrchestrator struct{}
 // embedding the interface is a well-known Go test pattern that works here.
 
 func TestNewMCPServer(t *testing.T) {
-	s := NewMCPServer(nil, "1.0.0-test", zap.NewNop(), nil, nil)
+	s := NewMCPServer(nil, "1.0.0-test", zap.NewNop(), nil, nil, false)
 	if s == nil {
 		t.Fatal("expected non-nil MCP server")
 	}
 }
 
 func TestNewMCPServerDefaultVersion(t *testing.T) {
-	s := NewMCPServer(nil, "", zap.NewNop(), nil, nil)
+	s := NewMCPServer(nil, "", zap.NewNop(), nil, nil, false)
 	if s == nil {
 		t.Fatal("expected non-nil MCP server with default version")
 	}
 }
 
 func TestToolCount(t *testing.T) {
-	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil)
+	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil, false)
 	if s == nil {
 		t.Fatal("expected non-nil MCP server")
 	}
@@ -58,7 +58,7 @@ func TestResourceCount(t *testing.T) {
 	t.Logf("expected %d resource registrations", expectedResourceCount)
 
 	// Verify server creates successfully with all resources registered.
-	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil)
+	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil, false)
 	if s == nil {
 		t.Fatal("expected non-nil MCP server")
 	}
@@ -70,7 +70,7 @@ func TestPromptCount(t *testing.T) {
 	t.Logf("expected %d prompt registrations", expectedPromptCount)
 
 	// Verify server creates successfully with all prompts registered.
-	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil)
+	s := NewMCPServer(nil, "test", zap.NewNop(), nil, nil, false)
 	if s == nil {
 		t.Fatal("expected non-nil MCP server")
 	}

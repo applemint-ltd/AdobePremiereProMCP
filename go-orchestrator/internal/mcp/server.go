@@ -13,11 +13,19 @@ import (
 //
 // The orchestrator parameter provides the concrete implementation that
 // each tool handler delegates to for performing actual editing operations.
-// aud and snap may be nil, which disables audit persistence and pre-call
-// snapshots respectively (the middleware still assigns correlation IDs).
-func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger, aud *audit.Auditor, snap Snapshotter) *server.MCPServer {
+// aud and snapshots may be nil, which disables audit persistence and the
+// snapshot-backed tools (the middleware still assigns correlation IDs).
+// autoSnapshot controls whether a timeline snapshot is taken before every
+// mutating tool call; the diff/digest tools work off stored snapshots either
+// way.
+func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger, aud *audit.Auditor, snapshots *audit.SnapshotStore, autoSnapshot bool) *server.MCPServer {
 	if version == "" {
 		version = "dev"
+	}
+
+	var snap Snapshotter
+	if autoSnapshot && snapshots != nil {
+		snap = snapshots
 	}
 
 	s := server.NewMCPServer(
@@ -38,6 +46,7 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger,
 	)
 
 	registerTools(s, orchestrator, logger)
+	registerAuditTools(s, aud, snapshots, logger)
 	registerResources(s)
 	registerPrompts(s)
 
