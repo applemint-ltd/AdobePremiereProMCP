@@ -75,6 +75,9 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	argsJSON, _ := json.Marshal(map[string]any{
 		"params": params,
 	})
+	// Single-frame renders can take minutes cold on heavy sequences.
+	ctx, cancel := context.WithTimeout(ctx, captureCallTimeout)
+	defer cancel()
 	result, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("ExportFrame: %w", err)

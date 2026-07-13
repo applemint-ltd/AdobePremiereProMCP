@@ -92,8 +92,20 @@ if (typeof JSON === "undefined") {
  * Convert a Time object to seconds (float).
  */
 function _timeToSeconds(timeObj) {
-    if (!timeObj) return 0;
-    return parseFloat(timeObj.seconds);
+    if (timeObj === null || timeObj === undefined || timeObj === "") return 0;
+    if (typeof timeObj === "object") {
+        var s = parseFloat(timeObj.seconds);
+        return isNaN(s) ? 0 : s;
+    }
+    // Some 2026 DOM getters (e.g. sequence.getInPoint) return bare tick
+    // strings instead of Time objects. Large magnitudes are ticks
+    // (254016000000 per second); small ones are already seconds. The old
+    // code read .seconds off a string -> undefined -> invalid JSON via the
+    // (also old) polyfill.
+    var n = parseFloat(timeObj);
+    if (isNaN(n)) return 0;
+    if (Math.abs(n) > 100000) return n / 254016000000;
+    return n;
 }
 
 /**
@@ -787,7 +799,7 @@ function _waitForExporters(encoder) {
     encoder.launchEncoder();
     var collection = encoder.getExporters();
     var attempts = 0;
-    while ((!collection || collection.numExporters === 0) && attempts < 20) {
+    while (_exporterCount(collection) === 0 && attempts < 20) {
         $.sleep(500);
         collection = encoder.getExporters();
         attempts++;
@@ -795,52 +807,67 @@ function _waitForExporters(encoder) {
     return collection;
 }
 
+// On Premiere 2026 the exporter/preset collections are array-like
+// (.length); older versions used .numExporters/.numPresets. Count either.
+function _exporterCount(c) {
+    if (!c) return 0;
+    if (typeof c.numExporters === "number") return c.numExporters;
+    if (typeof c.numPresets === "number") return c.numPresets;
+    if (typeof c.length === "number") return c.length;
+    return 0;
+}
+
 // ---------------------------------------------------------------------------
-// _resolvePresetPath(preset, encoder)
+// _resolvePresetPath(preset)
 // Accepts either a real .epr preset file path (used as-is) or one of the
 // semantic preset keys premiere_export exposes (h264_1080p, h264_4k,
-// prores_422, prores_4444, dnxhd, gif) and resolves it to a real preset path
-// by matching against Media Encoder's actual installed exporters/presets.
-// Never falls back to a hardcoded absolute path -- preset bundle locations
-// are app-version- and OS-specific and go stale (e.g. a path baked in for
-// "Adobe Media Encoder 2024" silently failing on a 2026 install).
+// h264_preview, prores_422, prores_4444, dnxhd, gif) and resolves it to a
+// real preset file inside the running app's own systempresets bundle.
+//
+// On Premiere 2026, preset objects from encoder.getExporters() expose only
+// {id, matchName, name} — no .path — so scanning the AME collection can
+// never produce the .epr path that encodeSequence/exportAsMediaDirect
+// require. Resolving against app.path keeps this version-proof (no
+// hardcoded app-name folder), with per-key candidate lists so renamed
+// presets degrade gracefully.
 // ---------------------------------------------------------------------------
-function _resolvePresetPath(preset, encoder) {
+function _resolvePresetPath(preset) {
     if (!preset) preset = "h264_1080p";
     if (/\.epr$/i.test(preset)) return preset; // already a real preset file path
 
-    var PRESET_HINTS = {
-        h264_1080p:  { exporter: "h.264", preset: "match source - high bitrate" },
-        h264_4k:     { exporter: "h.264", preset: "match source - high bitrate" },
+    var sp = app.path + "Contents/MediaIO/systempresets/";
+    var CANDIDATES = {
+        h264_1080p: [
+            "4E49434B_48323634/High Quality 1080 HD.epr",
+            "4E49434B_48323634/01 - Match Source - High bitrate.epr",
+            "4E49434B_48323634/00 - Match Source - High bitrate.epr",
+            "4B434D58_48323634/Match Source - High bitrate.epr"
+        ],
+        h264_4k: [
+            "4E49434B_48323634/High Quality 2160 4K.epr",
+            "4E49434B_48323634/01 - Match Source - High bitrate.epr",
+            "4E49434B_48323634/00 - Match Source - High bitrate.epr"
+        ],
         // Low-bitrate preview for the remote review loop (Slack uploads).
-        h264_preview: { exporter: "h.264", preset: "match source - adaptive low bitrate" },
-        prores_422:  { exporter: "quicktime", preset: "apple prores 422" },
-        prores_4444: { exporter: "quicktime", preset: "apple prores 4444" },
-        dnxhd:       { exporter: "mxf", preset: "dnxhd" },
-        gif:         { exporter: "animated gif", preset: "" }
+        h264_preview: [
+            "4E49434B_48323634/02 - Match Source - Low bitrate.epr",
+            "4E49434B_48323634/High Quality 720 HD.epr",
+            "4E49434B_48323634/01 - Match Source - Medium bitrate.epr",
+            "4E49434B_48323634/00 - Match Source - Medium bitrate.epr"
+        ],
+        prores_422: ["3F3F3F3F_4D6F6F56/Apple ProRes 422.epr"],
+        prores_4444: ["3F3F3F3F_4D6F6F56/Apple ProRes 4444.epr"],
+        dnxhd: ["4d584620_444d5846/01 - Match Source.epr"],
+        gif: ["47494666_47494666/Animated GIF (Match Source).epr"]
     };
-    var hint = PRESET_HINTS[preset] || null;
 
-    var collection = _waitForExporters(encoder);
-    if (!collection || collection.numExporters === 0) return null;
-
-    var fallback = null;
-    for (var i = 0; i < collection.numExporters; i++) {
-        var exp = collection[i];
-        var expName = (exp.name || "").toLowerCase();
-        if (hint && expName.indexOf(hint.exporter) === -1) continue;
-        if (!exp.getPresets) continue;
-        var presets = exp.getPresets();
-        for (var j = 0; j < presets.numPresets; j++) {
-            var p = presets[j];
-            if (!fallback) fallback = p.path;
-            var pName = (p.name || "").toLowerCase();
-            if (!hint || hint.preset === "" || pName.indexOf(hint.preset) !== -1) {
-                return p.path;
-            }
-        }
+    var list = CANDIDATES[preset];
+    if (!list) return null;
+    for (var i = 0; i < list.length; i++) {
+        var p = sp + list[i];
+        if (File(p).exists) return p;
     }
-    return fallback; // best-effort: any preset from a matching (or any) exporter
+    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -866,14 +893,15 @@ function exportSequence(outputPath, presetPath) {
 
         if (encoder) {
             // Resolve the caller's preset (a semantic key like "h264_1080p"
-            // or a real .epr path) against Media Encoder's actual installed
-            // exporters, waiting for AME to finish launching if needed. No
-            // hardcoded fallback path -- those go stale across app versions
-            // and OSes and fail silently.
-            var preset = _resolvePresetPath(presetPath, encoder);
+            // or a real .epr path) against the app's own on-disk preset
+            // bundle -- 2026's encoder API exposes no preset paths at all.
+            var preset = _resolvePresetPath(presetPath);
             if (!preset) {
-                return _err("Could not resolve an export preset -- Adobe Media Encoder returned no exporters/presets. Make sure AME is installed and try again in a few seconds.");
+                return _err("Could not resolve export preset " + presetPath + " -- pass a semantic key (h264_1080p, h264_4k, h264_preview, prores_422, prores_4444, dnxhd, gif) or a real .epr file path.");
             }
+
+            // AME does the actual rendering; make sure it is coming up.
+            try { encoder.launchEncoder(); } catch (launchErr) {}
 
             // Queue the export job in AME
             var jobID = encoder.encodeSequence(
@@ -895,23 +923,23 @@ function exportSequence(outputPath, presetPath) {
                 sequenceName: seq.name || ""
             });
         } else {
-            // Fallback: use direct export if encoder is not available at all.
-            // This blocks until the export is complete, and exportAsMediaDirect
-            // requires a real .epr path -- without an encoder object there is
-            // no way to resolve a semantic preset key, so require a real path.
-            if (!presetPath || !/\.epr$/i.test(presetPath)) {
-                return _err("Adobe Media Encoder is unavailable and no real .epr preset path was provided; a semantic preset name cannot be resolved without it.");
+            // Fallback: use direct export if encoder is not available at
+            // all. This blocks until the export is complete. Semantic keys
+            // resolve from the app's on-disk preset bundle here too.
+            var directPreset = _resolvePresetPath(presetPath);
+            if (!directPreset) {
+                return _err("Could not resolve export preset " + presetPath + " and Adobe Media Encoder is unavailable.");
             }
 
             seq.exportAsMediaDirect(
                 outputPath,
-                presetPath,
+                directPreset,
                 0  // WorkAreaType
             );
 
             return _ok({
                 outputPath: outputPath,
-                presetPath: presetPath,
+                presetPath: directPreset,
                 status: "export_complete",
                 sequenceName: seq.name || ""
             });
@@ -1125,7 +1153,9 @@ function exportFrame(outputPath, format) {
         // couple seconds later). Poll briefly instead of checking once.
         var finalPath = null;
         var waitedMs = 0;
-        while (waitedMs < 8000) {
+        // Rendering one frame of a heavy sequence (4K, effects) can take
+        // well over the old 8s window; observed ~90s cold on a real project.
+        while (waitedMs < 45000) {
             finalPath = _resolveExportedStill(outPath);
             if (finalPath && File(finalPath).exists) break;
             finalPath = null;
@@ -1346,7 +1376,7 @@ function getExporters() {
 
         if (encoder.getExporters) {
             var exporterCollection = _waitForExporters(encoder);
-            for (var i = 0; i < exporterCollection.numExporters; i++) {
+            for (var i = 0; i < _exporterCount(exporterCollection); i++) {
                 var exp = exporterCollection[i];
                 exporters.push({
                     index: i,
@@ -1384,8 +1414,8 @@ function getExportPresets(exporterIndex) {
         }
 
         var exporterCollection = _waitForExporters(encoder);
-        if (exporterIndex >= exporterCollection.numExporters) {
-            return _err("Exporter index " + exporterIndex + " out of range (have " + exporterCollection.numExporters + ")");
+        if (exporterIndex >= _exporterCount(exporterCollection)) {
+            return _err("Exporter index " + exporterIndex + " out of range (have " + _exporterCount(exporterCollection) + ")");
         }
 
         var exp = exporterCollection[exporterIndex];
@@ -1393,12 +1423,13 @@ function getExportPresets(exporterIndex) {
 
         if (exp.getPresets) {
             var presetCollection = exp.getPresets();
-            for (var i = 0; i < presetCollection.numPresets; i++) {
+            for (var i = 0; i < _exporterCount(presetCollection); i++) {
                 var preset = presetCollection[i];
                 presets.push({
                     index: i,
                     name: preset.name || "",
                     matchName: preset.matchName || "",
+                    id: preset.id || "",
                     path: preset.path || ""
                 });
             }

@@ -5,22 +5,35 @@
 function _ok(data) { return JSON.stringify({ success: true, data: data }); }
 function _err(message) { return JSON.stringify({ success: false, error: String(message) }); }
 
-// JSON polyfill for older ExtendScript
+// JSON polyfill for older ExtendScript.
+// Standards-conforming where it matters: undefined object members are
+// OMITTED (the old version emitted the literal `undefined`, producing
+// invalid JSON whenever any host function returned an object with an
+// undefined field — e.g. a 2026 DOM getter that changed shape), and
+// non-finite numbers become null.
 if (typeof JSON === "undefined") {
     JSON = {
         stringify: function(obj) {
             if (obj === null) return "null";
-            if (typeof obj === "undefined") return undefined;
+            if (typeof obj === "undefined") return "null";
             if (typeof obj === "string") return '"' + obj.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
-            if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
+            if (typeof obj === "number") return isFinite(obj) ? String(obj) : "null";
+            if (typeof obj === "boolean") return String(obj);
             if (obj instanceof Array) {
                 var a = [];
-                for (var i = 0; i < obj.length; i++) a.push(JSON.stringify(obj[i]));
+                for (var i = 0; i < obj.length; i++) {
+                    var v = JSON.stringify(obj[i]);
+                    a.push(v === undefined ? "null" : v);
+                }
                 return "[" + a.join(",") + "]";
             }
             if (typeof obj === "object") {
                 var p = [];
-                for (var k in obj) if (obj.hasOwnProperty(k)) p.push('"' + k + '":' + JSON.stringify(obj[k]));
+                for (var k in obj) {
+                    if (!obj.hasOwnProperty(k)) continue;
+                    if (typeof obj[k] === "undefined" || typeof obj[k] === "function") continue;
+                    p.push('"' + k.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '":' + JSON.stringify(obj[k]));
+                }
                 return "{" + p.join(",") + "}";
             }
             return '""';

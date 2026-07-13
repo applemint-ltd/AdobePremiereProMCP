@@ -4,46 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
 // Frame Capture Operations
 // ---------------------------------------------------------------------------
 
+// captureCallTimeout allows for a real single-frame render: the in-process
+// encoder can take ~90s cold on a heavy sequence, well past the default 30s
+// bridge deadline.
+const captureCallTimeout = 3 * time.Minute
+
 // CaptureFrameAsBase64 captures the current frame at the playhead position
-// and returns it as a base64-encoded PNG image.
+// and returns it as a base64-encoded image.
 func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult, error) {
-	argsJSON, _ := json.Marshal(map[string]any{})
-	raw, err := e.premiere.EvalCommand(ctx, "captureFrameAsBase64", string(argsJSON))
+	ctx, cancel := context.WithTimeout(ctx, captureCallTimeout)
+	defer cancel()
+
+	raw, err := e.premiere.EvalCommand(ctx, "captureFrameAsBase64", "{}")
 	if err != nil {
 		return nil, fmt.Errorf("CaptureFrameAsBase64: %w", err)
 	}
 
-	// Parse the JSON response from ExtendScript
-	var resp struct {
-		Success bool `json:"success"`
-		Data    struct {
-			ImageBase64 string  `json:"image_base64"`
-			Format      string  `json:"format"`
-			Width       int     `json:"width"`
-			Height      int     `json:"height"`
-			Timecode    float64 `json:"timecode"`
-		} `json:"data"`
-		Error string `json:"error"`
+	// EvalCommand already unwraps the {success,data} envelope; raw is the
+	// inner payload (success:false became a Go error above).
+	var data struct {
+		ImageBase64 string  `json:"image_base64"`
+		Format      string  `json:"format"`
+		Width       int     `json:"width"`
+		Height      int     `json:"height"`
+		Timecode    float64 `json:"timecode"`
 	}
-	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		return nil, fmt.Errorf("CaptureFrameAsBase64: failed to parse response: %w", err)
 	}
-	if !resp.Success {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: %s", resp.Error)
+	if data.ImageBase64 == "" {
+		return nil, fmt.Errorf("CaptureFrameAsBase64: host returned no image data")
 	}
 
 	return &FrameCaptureResult{
-		ImageBase64: resp.Data.ImageBase64,
-		Format:      resp.Data.Format,
-		Width:       resp.Data.Width,
-		Height:      resp.Data.Height,
-		Timecode:    resp.Data.Timecode,
+		ImageBase64: data.ImageBase64,
+		Format:      data.Format,
+		Width:       data.Width,
+		Height:      data.Height,
+		Timecode:    data.Timecode,
 	}, nil
 }
 

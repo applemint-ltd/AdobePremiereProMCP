@@ -136,11 +136,16 @@ const PONG_TIMEOUT_MS = 5_000;
 // much longer timeout instead.
 const LONG_RUNNING_COMMAND_TIMEOUT_MS = 600_000;
 // exportSequence itself only queues in AME, but a cold AME launch plus
-// preset resolution (_waitForExporters polls up to 10s) can exceed 30s.
+// preset resolution can exceed 30s. Frame captures render one frame via the
+// in-process encoder and poll for the file — observed ~90s cold on a heavy
+// real-world sequence.
 const LONG_RUNNING_EVAL_FUNCTIONS = new Set([
   "exportDirect",
   "exportViaAME",
   "exportSequence",
+  "exportFrame",
+  "batchExportFrames",
+  "captureFrameAsBase64",
 ]);
 // Queues into AME rather than blocking on the render, but still needs to
 // wait for AME to launch and a preset to resolve -- longer than default.
