@@ -14936,11 +14936,14 @@ function testBridgeConnection() {
  */
 function healthCheck() {
     try {
+        // Report only what ExtendScript can actually know: app/project/engine
+        // state. Bridge connectivity is asserted by the Go orchestrator's
+        // ping through the whole chain -- a hardcoded bridge:{connected:true}
+        // here made a broken bridge look healthy.
         var health = {
             status: "healthy",
-            premiere: { running: true, version: app.version || "unknown" },
+            premiere: { version: app.version || "unknown" },
             project: { open: false, name: "none" },
-            bridge: { connected: true },
             extendScript: { version: $.version || "unknown", engine: $.engineName || "unknown" },
             timestamp: new Date().toISOString()
         };

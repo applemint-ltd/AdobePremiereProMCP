@@ -49,6 +49,13 @@ func newIntelligenceClient(addr string, dialTimeout, callTimeout time.Duration, 
 	}, nil
 }
 
+// Ping reports whether the intelligence service's gRPC channel can reach a
+// Ready state. The service exposes no health RPC, so channel connectivity is
+// the honest signal available.
+func (c *IntelligenceClient) Ping(ctx context.Context) error {
+	return pingConn(ctx, c.conn, "intelligence service")
+}
+
 // close shuts down the underlying gRPC connection.
 func (c *IntelligenceClient) close() error {
 	c.logger.Info("closing intelligence connection")

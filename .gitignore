@@ -77,3 +77,6 @@ TODO.md
 # ─── Python bytecode (anywhere, incl. generated gen/) ───
 **/__pycache__/
 **/*.pyc
+
+# Runtime logs and audit trail
+scripts/logs/

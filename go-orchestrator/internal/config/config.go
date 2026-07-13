@@ -53,6 +53,13 @@ type Config struct {
 	// AutoSnapshot controls whether a timeline snapshot is taken before each
 	// mutating tool call.
 	AutoSnapshot bool
+
+	// LogDir is where rotated log files are written (in addition to stderr).
+	// Empty disables file logging.
+	LogDir string
+
+	// HealthPort is the port for the HTTP health endpoint. 0 disables it.
+	HealthPort int
 }
 
 // Defaults returns a Config populated with default values.
@@ -69,7 +76,19 @@ func Defaults() Config {
 		TypeScriptBridgeTimeout: 30 * time.Second,
 		AuditDir:                defaultAuditDir(),
 		AutoSnapshot:            true,
+		LogDir:                  defaultLogDir(),
+		HealthPort:              8085,
 	}
+}
+
+// defaultLogDir mirrors defaultAuditDir: file logging stays on unless
+// explicitly disabled, because stderr of a stdio MCP server is rarely kept.
+func defaultLogDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "premierpro-mcp", "logs")
 }
 
 // defaultAuditDir keeps auditing on even when the launcher forgets to set
@@ -172,6 +191,21 @@ func LoadFromEnv() (Config, error) {
 	switch os.Getenv("PREMIERE_AUTO_SNAPSHOT") {
 	case "off", "0", "false":
 		cfg.AutoSnapshot = false
+	}
+
+	if v := os.Getenv("PREMIERE_LOG_DIR"); v != "" {
+		if v == "off" {
+			cfg.LogDir = ""
+		} else {
+			cfg.LogDir = v
+		}
+	}
+	if v := os.Getenv("HEALTH_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil || port < 0 || port > 65535 {
+			return cfg, fmt.Errorf("invalid HEALTH_PORT %q", v)
+		}
+		cfg.HealthPort = port
 	}
 
 	return cfg, nil

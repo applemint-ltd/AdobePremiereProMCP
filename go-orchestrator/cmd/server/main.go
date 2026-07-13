@@ -4,18 +4,23 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/config"
 	grpcclients "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/grpc"
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/health"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/mcp"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
 )
@@ -61,7 +66,7 @@ func run() error {
 	}
 
 	// ── Logger ────────────────────────────────────────────────────────
-	logger, err := buildLogger(cfg.LogLevel)
+	logger, err := buildLogger(cfg.LogLevel, cfg.LogDir)
 	if err != nil {
 		return fmt.Errorf("building logger: %w", err)
 	}
@@ -126,6 +131,40 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// ── Health endpoint ───────────────────────────────────────────────
+	if cfg.HealthPort > 0 {
+		checker := health.NewChecker(logger)
+		checker.RegisterProbe("premiere_bridge", func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			_, err := clients.Premiere.Ping(ctx)
+			return err
+		})
+		checker.RegisterProbe("media_engine", health.MediaProbe(clients.Media))
+		checker.RegisterProbe("intelligence", health.IntelligenceProbe(clients.Intel))
+		checker.Start(ctx, 30*time.Second)
+
+		healthSrv := &http.Server{
+			Addr:    fmt.Sprintf("localhost:%d", cfg.HealthPort),
+			Handler: health.NewHTTPHandler(checker),
+		}
+		go func() {
+			// Several MCP server processes can coexist (one per headless
+			// claude turn); only the first gets the port. That is fine —
+			// any live process can serve health for the shared backends.
+			if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Info("health endpoint not started (likely another instance owns the port)",
+					zap.Int("port", cfg.HealthPort), zap.Error(err))
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = healthSrv.Shutdown(shutdownCtx)
+		}()
+	}
+
 	switch cfg.Transport {
 	case config.TransportSSE:
 		return serveSSE(ctx, mcpSrv, cfg, logger)
@@ -167,8 +206,12 @@ func serveSSE(ctx context.Context, mcpSrv *mcpserver.MCPServer, cfg config.Confi
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-// buildLogger creates a zap.Logger configured for the given level string.
-func buildLogger(level string) (*zap.Logger, error) {
+// buildLogger creates a zap.Logger that always writes to stderr at the
+// requested level and, when logDir is set, additionally to a rotated file at
+// Info. The file core is independent of the stderr level on purpose: the
+// stdio launcher runs with --log-level error, and per-tool-call visibility
+// must survive that.
+func buildLogger(level, logDir string) (*zap.Logger, error) {
 	var zapLevel zapcore.Level
 	switch level {
 	case "debug":
@@ -181,25 +224,45 @@ func buildLogger(level string) (*zap.Logger, error) {
 		zapLevel = zap.InfoLevel
 	}
 
-	zapCfg := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zapLevel),
-		Encoding:         "json",
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-		EncoderConfig: zapcore.EncoderConfig{
-			TimeKey:        "ts",
-			LevelKey:       "level",
-			NameKey:        "logger",
-			CallerKey:      "caller",
-			MessageKey:     "msg",
-			StacktraceKey:  "stacktrace",
-			LineEnding:     zapcore.DefaultLineEnding,
-			EncodeLevel:    zapcore.LowercaseLevelEncoder,
-			EncodeTime:     zapcore.ISO8601TimeEncoder,
-			EncodeDuration: zapcore.MillisDurationEncoder,
-			EncodeCaller:   zapcore.ShortCallerEncoder,
-		},
+	encoderCfg := zapcore.EncoderConfig{
+		TimeKey:        "ts",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.MillisDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	return zapCfg.Build()
+	consoleCore := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderCfg),
+		zapcore.Lock(os.Stderr),
+		zap.NewAtomicLevelAt(zapLevel),
+	)
+
+	core := consoleCore
+	if logDir != "" {
+		if err := os.MkdirAll(logDir, 0o755); err == nil {
+			fileLevel := zapLevel
+			if fileLevel > zap.InfoLevel {
+				fileLevel = zap.InfoLevel
+			}
+			fileCore := zapcore.NewCore(
+				zapcore.NewJSONEncoder(encoderCfg),
+				zapcore.AddSync(&lumberjack.Logger{
+					Filename:   filepath.Join(logDir, "go-orchestrator.log"),
+					MaxSize:    50, // MB
+					MaxBackups: 5,
+				}),
+				zap.NewAtomicLevelAt(fileLevel),
+			)
+			core = zapcore.NewTee(consoleCore, fileCore)
+		}
+	}
+
+	return zap.New(core, zap.AddCaller()), nil
 }

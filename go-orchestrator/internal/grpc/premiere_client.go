@@ -494,15 +494,26 @@ func (c *PremiereBridgeClient) EvalCommand(ctx context.Context, functionName, ar
 // pass through untouched.
 func unwrapEnvelope(functionName, resultJSON string) (string, error) {
 	if resultJSON == "" {
-		return "", nil
+		// Empty responses used to pass through as "" and render as
+		// empty-but-successful tool results, hiding missing host functions
+		// and broken parsing. Surface them as what they are: failures.
+		return "", fmt.Errorf("%s: empty response from ExtendScript (function may not exist or returned nothing)", functionName)
 	}
 	var env struct {
 		Success *bool           `json:"success"`
 		Data    json.RawMessage `json:"data"`
 		Error   string          `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(resultJSON), &env); err != nil || env.Success == nil {
-		// Not an envelope (e.g. a bare value or non-JSON) — pass through.
+	if err := json.Unmarshal([]byte(resultJSON), &env); err != nil {
+		if !json.Valid([]byte(resultJSON)) {
+			return "", fmt.Errorf("%s: non-JSON response from ExtendScript: %.200s", functionName, resultJSON)
+		}
+		// Valid JSON that isn't an object envelope (e.g. a bare array or
+		// scalar) — pass through.
+		return resultJSON, nil
+	}
+	if env.Success == nil {
+		// A JSON object without the envelope's success flag — pass through.
 		return resultJSON, nil
 	}
 	if !*env.Success {

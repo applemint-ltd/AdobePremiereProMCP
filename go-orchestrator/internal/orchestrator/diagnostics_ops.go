@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -286,14 +286,49 @@ func (e *Engine) TestBridgeConnection(ctx context.Context) (*GenericResult, erro
 // Health Checks
 // ---------------------------------------------------------------------------
 
-// HealthCheck performs a full system health check.
+// HealthCheck performs a full system health check. It first pings through
+// the whole Go->gRPC->WebSocket->ExtendScript chain — the ExtendScript-side
+// healthCheck can only ever run when everything already works, so bridge
+// connectivity must be established out here, not asserted in there.
 func (e *Engine) HealthCheck(ctx context.Context) (*GenericResult, error) {
-	argsJSON, _ := json.Marshal(map[string]any{})
-	result, err := e.premiere.EvalCommand(ctx, "healthCheck", string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("HealthCheck: %w", err)
+	health := map[string]any{}
+
+	ping, pingErr := e.premiere.Ping(ctx)
+	if pingErr != nil {
+		health["status"] = "unhealthy"
+		health["bridge"] = map[string]any{"connected": false, "error": pingErr.Error()}
+		health["premiere"] = map[string]any{"running": false}
+		msg, _ := json.Marshal(health)
+		return &GenericResult{Status: "unhealthy", Message: string(msg)}, nil
 	}
-	return &GenericResult{Status: "success", Message: result}, nil
+
+	health["status"] = "healthy"
+	health["bridge"] = map[string]any{"connected": true, "mode": ping.BridgeMode}
+	health["premiere"] = map[string]any{
+		"running":     ping.PremiereRunning,
+		"version":     ping.PremiereVersion,
+		"projectOpen": ping.ProjectOpen,
+	}
+	if !ping.PremiereRunning {
+		health["status"] = "unhealthy"
+	}
+
+	// Merge ExtendScript-side details (project/engine info) when reachable;
+	// a failure here degrades the report rather than erroring the tool.
+	if result, err := e.premiere.EvalCommand(ctx, "healthCheck", "{}"); err == nil {
+		var details map[string]any
+		if json.Unmarshal([]byte(result), &details) == nil {
+			health["details"] = details
+			if s, ok := details["status"].(string); ok && s == "warning" && health["status"] == "healthy" {
+				health["status"] = "warning"
+			}
+		}
+	} else {
+		health["details"] = map[string]any{"error": err.Error()}
+	}
+
+	msg, _ := json.Marshal(health)
+	return &GenericResult{Status: "success", Message: string(msg)}, nil
 }
 
 // GetServiceStatus returns the status of all MCP services.
@@ -306,14 +341,27 @@ func (e *Engine) GetServiceStatus(ctx context.Context) (*GenericResult, error) {
 	return &GenericResult{Status: "success", Message: result}, nil
 }
 
-// GetBridgeLatency measures the bridge round-trip time.
+// GetBridgeLatency measures the bridge round-trip time. The ExtendScript
+// getBridgeLatency only times in-process work, so the real transport figure
+// is measured here around the full Go->gRPC->WS->ES round trip.
 func (e *Engine) GetBridgeLatency(ctx context.Context) (*GenericResult, error) {
-	argsJSON, _ := json.Marshal(map[string]any{})
-	result, err := e.premiere.EvalCommand(ctx, "getBridgeLatency", string(argsJSON))
+	start := time.Now()
+	result, err := e.premiere.EvalCommand(ctx, "getBridgeLatency", "{}")
+	roundTripMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return nil, fmt.Errorf("GetBridgeLatency: %w", err)
 	}
-	return &GenericResult{Status: "success", Message: result}, nil
+
+	out := map[string]any{
+		"roundTripMs": roundTripMs,
+		"note":        "roundTripMs is the full Go->gRPC->WebSocket->ExtendScript round trip",
+	}
+	var esTiming map[string]any
+	if json.Unmarshal([]byte(result), &esTiming) == nil {
+		out["esInternal"] = esTiming
+	}
+	msg, _ := json.Marshal(out)
+	return &GenericResult{Status: "success", Message: string(msg)}, nil
 }
 
 // GetExtendScriptVersion returns the ExtendScript engine version.

@@ -49,6 +49,13 @@ func newMediaEngineClient(addr string, dialTimeout, callTimeout time.Duration, l
 	}, nil
 }
 
+// Ping reports whether the media engine's gRPC channel can reach a Ready
+// state. The service exposes no health RPC, so channel connectivity is the
+// honest signal available.
+func (c *MediaEngineClient) Ping(ctx context.Context) error {
+	return pingConn(ctx, c.conn, "media engine")
+}
+
 // close shuts down the underlying gRPC connection.
 func (c *MediaEngineClient) close() error {
 	c.logger.Info("closing media engine connection")

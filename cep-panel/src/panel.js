@@ -380,7 +380,19 @@
             try {
                 result = JSON.parse(rawResult);
             } catch (e) {
-                // If it's not JSON, return it as a plain string value
+                // Every evalCommand host function returns an _ok/_err JSON
+                // envelope, so a non-JSON return there means the function is
+                // missing, threw outside its try, or returned undefined --
+                // fail loudly instead of passing garbage up as success.
+                if (action === "evalCommand") {
+                    log("Non-JSON result for evalCommand" + cidTag + ": " + String(rawResult).substring(0, 80), "error");
+                    stats.errorsCount++;
+                    updateStatsUI();
+                    sendResponse(ws, requestId, false, null,
+                        "Host function returned a non-JSON result: " + String(rawResult).substring(0, 200), correlationId);
+                    return;
+                }
+                // Typed actions may legitimately return a bare string.
                 result = rawResult;
             }
 

@@ -23,11 +23,14 @@ import "./load-env.js";
 import { App } from "@slack/bolt";
 import { spawn } from "node:child_process";
 import * as path from "node:path";
+import { SessionStore, appendTurnLog } from "./session-store.js";
 import { printError, printInfo, printSuccess } from "./ui.js";
 
 const RESET_COMMANDS = new Set(["new project", "reset", "start over"]);
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const ALLOWED_TOOLS = "mcp__premierpro-mcp__*";
+const LOGS_DIR = path.join(PROJECT_ROOT, "scripts", "logs");
+const TURN_LOG_DIR = path.join(LOGS_DIR, "slack-threads");
 
 const SYSTEM_PROMPT_ADDITION = `You are responding inside a Slack channel where teammates ask you to make
 edits in Adobe Premiere Pro. You have access only to the premierpro-mcp
@@ -88,7 +91,8 @@ function describeAttachments(files: SlackFile[] | undefined): string {
 
 // One Claude Code session per Slack thread. Keyed by the thread's root
 // timestamp (a top-level message's own `ts`, or a reply's `thread_ts`).
-const sessionIdsByThread = new Map<string, string>();
+// Persisted to disk so bot restarts don't orphan live threads.
+const sessionIdsByThread = new SessionStore(path.join(LOGS_DIR, "slack-sessions.json"));
 
 /** Spawn `claude -p` for one turn. No shell involved, so Slack message text can't inject flags. */
 function runClaude(
@@ -236,9 +240,21 @@ async function main(): Promise<void> {
       (text || "Import the attached file(s) into the current Premiere Pro project.") +
       describeAttachments(msg.files);
 
+    const turnStarted = Date.now();
     try {
       const result = await runClaudeWithRetry(promptText, threadKey);
       if (result.session_id) sessionIdsByThread.set(threadKey, result.session_id);
+
+      appendTurnLog(TURN_LOG_DIR, threadKey, {
+        ts: new Date().toISOString(),
+        prompt: promptText.slice(0, 500),
+        session_id: result.session_id,
+        subtype: result.subtype,
+        is_error: result.is_error,
+        duration_ms: Date.now() - turnStarted,
+        total_cost_usd: result.total_cost_usd,
+        permission_denials: result.permission_denials?.length ?? 0,
+      });
 
       const sessionLabel = result.session_id ? result.session_id.slice(0, 8) : "?";
       const logText = text.replace(/\s+/g, " ").slice(0, 60);
@@ -254,6 +270,13 @@ async function main(): Promise<void> {
       await say({ text: reply, thread_ts: threadKey });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      appendTurnLog(TURN_LOG_DIR, threadKey, {
+        ts: new Date().toISOString(),
+        prompt: promptText.slice(0, 500),
+        is_error: true,
+        duration_ms: Date.now() - turnStarted,
+        error: errMsg.slice(0, 1000),
+      });
       printError(`Chat error: ${errMsg}`);
       await say({ text: `Something went wrong: ${errMsg}`, thread_ts: threadKey });
     }
