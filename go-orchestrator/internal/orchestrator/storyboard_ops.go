@@ -197,26 +197,30 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 	report.Warnings = append(report.Warnings, plan.Warnings...)
 
 	// --- Sequence ---
-	// Created via the EvalCommand path (host createSequence takes flat
-	// {name,width,height,fps}); it goes through the honest envelope unwrap,
-	// unlike the typed RPC whose bridge handlers historically returned
-	// hollow results. The new sequence becomes the active one, which every
-	// subsequent placement targets.
-	seqArgs := map[string]any{
-		"name":   plan.Sequence.Name,
-		"width":  1920,
-		"height": 1080,
-		"fps":    30,
+	// Build the sequence FROM the first placeable clip. createNewSequence
+	// with an empty preset pops a modal "New Sequence" dialog on the hub
+	// that blocks the whole ExtendScript engine; createSequenceFromClips
+	// auto-detects settings from the clip with no dialog. Then clear the
+	// auto-placed clip so the placement loop below runs uniformly.
+	firstIdx := -1
+	for _, sp := range plan.Shots {
+		if !sp.Skipped && !sp.TextOnly {
+			firstIdx = sp.Clip.Index
+			break
+		}
 	}
-	if plan.Sequence.Width > 0 && plan.Sequence.Height > 0 {
-		seqArgs["width"], seqArgs["height"] = plan.Sequence.Width, plan.Sequence.Height
+	if firstIdx < 0 {
+		return nil, fmt.Errorf("no clip-backed shot to seed the sequence from")
 	}
-	if plan.Sequence.FPS > 0 {
-		seqArgs["fps"] = plan.Sequence.FPS
-	}
-	seqJSON, _ := json.Marshal(seqArgs)
-	if _, err := e.premiere.EvalCommand(ctx, "createSequence", string(seqJSON)); err != nil {
+	seqArgs, _ := json.Marshal(map[string]any{
+		"name":        plan.Sequence.Name,
+		"clipIndices": []int{firstIdx},
+	})
+	if _, err := e.premiere.EvalCommand(ctx, "createSequenceFromClips", string(seqArgs)); err != nil {
 		return nil, fmt.Errorf("could not create sequence %q: %w", plan.Sequence.Name, err)
+	}
+	if err := e.clearActiveSequenceTracks(ctx); err != nil {
+		report.Warnings = append(report.Warnings, "could not clear the seed clip: "+err.Error())
 	}
 
 	// --- Shots ---
@@ -485,6 +489,31 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 		zap.Int("warnings", len(report.Warnings)),
 	)
 	return report, nil
+}
+
+// clearActiveSequenceTracks removes every clip from video track 0 and audio
+// track 0 (removing index 0 repeatedly, since indices shift down). Used to
+// empty the seed clip left by createSequenceFromClips before the placement
+// loop runs.
+func (e *Engine) clearActiveSequenceTracks(ctx context.Context) error {
+	for _, tt := range []string{"video", "audio"} {
+		for guard := 0; guard < 200; guard++ {
+			clip, err := e.clipOnTrack(ctx, tt, 0, 0)
+			if err != nil {
+				return err
+			}
+			if clip == nil {
+				break
+			}
+			args, _ := json.Marshal(map[string]any{
+				"trackType": tt, "trackIndex": 0, "clipIndex": 0, "ripple": false,
+			})
+			if _, err := e.premiere.EvalCommand(ctx, "removeClipFromTrack", string(args)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // clipInfo mirrors _buildClipInfo (keys normalized to snake_case).

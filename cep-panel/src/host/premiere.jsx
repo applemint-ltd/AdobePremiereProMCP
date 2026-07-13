@@ -1635,12 +1635,15 @@ function createSequenceFromClips(paramsJson) {
         }
 
         // createNewSequenceFromClips auto-detects settings from the first clip
-        var newSeqID = app.project.createNewSequenceFromClips(name, items);
+        // (no preset dialog, unlike createNewSequence with an empty preset).
+        // Its return value on 2026 is the Sequence DOM object, not an id
+        // string -- never serialize it; read scalars off the active sequence.
+        app.project.createNewSequenceFromClips(name, items);
 
         var seq = app.project.activeSequence;
         return _ok({
-            name: name,
-            sequenceID: newSeqID || (seq ? seq.sequenceID : ""),
+            name: seq ? (seq.name || name) : name,
+            sequenceID: seq ? (seq.sequenceID || "") : "",
             clipCount: items.length,
             frameSizeHorizontal: seq ? (seq.frameSizeHorizontal || 0) : 0,
             frameSizeVertical: seq ? (seq.frameSizeVertical || 0) : 0,
