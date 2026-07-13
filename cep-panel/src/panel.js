@@ -326,8 +326,12 @@
     // ---------------------------------------------------------------------------
     // Command execution
     // ---------------------------------------------------------------------------
-    function executeCommand(action, params, requestId, ws) {
-        log("Exec: " + action + " [" + requestId.substring(0, 8) + "]");
+    function executeCommand(action, params, requestId, correlationId, ws) {
+        // correlationId is the audit ID minted by the Go orchestrator for the
+        // originating MCP tool call; it is logged here and echoed in the
+        // response so one ID can be traced across every layer's logs.
+        var cidTag = correlationId ? " {" + String(correlationId).substring(0, 12) + "}" : "";
+        log("Exec: " + action + " [" + requestId.substring(0, 8) + "]" + cidTag);
 
         // Track stats
         stats.commandsExecuted++;
@@ -339,7 +343,7 @@
         if (!builder) {
             stats.errorsCount++;
             updateStatsUI();
-            sendResponse(ws, requestId, false, null, "Unknown action: " + action);
+            sendResponse(ws, requestId, false, null, "Unknown action: " + action, correlationId);
             return;
         }
 
@@ -349,7 +353,7 @@
         } catch (buildErr) {
             stats.errorsCount++;
             updateStatsUI();
-            sendResponse(ws, requestId, false, null, "Failed to build script: " + buildErr.message);
+            sendResponse(ws, requestId, false, null, "Failed to build script: " + buildErr.message, correlationId);
             return;
         }
 
@@ -364,10 +368,10 @@
 
             // ExtendScript returns "EvalScript error." on failure
             if (rawResult === "EvalScript error.") {
-                log("ExtendScript error for " + action, "error");
+                log("ExtendScript error for " + action + cidTag, "error");
                 stats.errorsCount++;
                 updateStatsUI();
-                sendResponse(ws, requestId, false, null, "ExtendScript evaluation error for action: " + action);
+                sendResponse(ws, requestId, false, null, "ExtendScript evaluation error for action: " + action, correlationId);
                 return;
             }
 
@@ -386,13 +390,13 @@
                 log("premiere.jsx loaded (lazy)", "success");
             }
 
-            log("Done: " + action + " [" + requestId.substring(0, 8) + "]", "success");
+            log("Done: " + action + " [" + requestId.substring(0, 8) + "]" + cidTag, "success");
             updateStatsUI();
-            sendResponse(ws, requestId, true, result, null);
+            sendResponse(ws, requestId, true, result, null, correlationId);
         });
     }
 
-    function sendResponse(ws, requestId, success, result, error) {
+    function sendResponse(ws, requestId, success, result, error, correlationId) {
         if (ws.readyState !== 1) { // WebSocket.OPEN
             log("Cannot send response - WebSocket not open", "error");
             return;
@@ -402,6 +406,9 @@
             requestId: requestId,
             success: success,
         };
+        if (correlationId) {
+            response.correlationId = correlationId;
+        }
 
         if (success) {
             response.result = result;
@@ -468,15 +475,16 @@
                 var action = message.action;
                 var params = message.params || {};
                 var requestId = message.requestId || "no-id";
+                var correlationId = message.correlationId || null;
 
                 if (!action) {
                     stats.errorsCount++;
                     updateStatsUI();
-                    sendResponse(ws, requestId, false, null, "Missing 'action' field");
+                    sendResponse(ws, requestId, false, null, "Missing 'action' field", correlationId);
                     return;
                 }
 
-                executeCommand(action, params, requestId, ws);
+                executeCommand(action, params, requestId, correlationId, ws);
             });
 
             ws.on("close", function (code, reason) {

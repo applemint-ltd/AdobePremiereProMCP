@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -35,6 +37,22 @@ type Config struct {
 	RustEngineTimeout       time.Duration
 	PythonIntelTimeout      time.Duration
 	TypeScriptBridgeTimeout time.Duration
+
+	// AuditDir is where per-tool-call audit JSONL files (and timeline
+	// snapshots) are written. Empty disables auditing.
+	AuditDir string
+
+	// SessionTag identifies the logical session (e.g. a Slack thread key)
+	// stamped on every audit record. Set by whatever launches the server.
+	SessionTag string
+
+	// ClaudeSession is the Claude Code session ID driving this server, when
+	// known, so audit records can be joined to the client-side transcript.
+	ClaudeSession string
+
+	// AutoSnapshot controls whether a timeline snapshot is taken before each
+	// mutating tool call.
+	AutoSnapshot bool
 }
 
 // Defaults returns a Config populated with default values.
@@ -49,7 +67,19 @@ func Defaults() Config {
 		RustEngineTimeout:       30 * time.Second,
 		PythonIntelTimeout:      60 * time.Second,
 		TypeScriptBridgeTimeout: 30 * time.Second,
+		AuditDir:                defaultAuditDir(),
+		AutoSnapshot:            true,
 	}
+}
+
+// defaultAuditDir keeps auditing on even when the launcher forgets to set
+// PREMIERE_AUDIT_DIR — traceability is the point, so opt-out, not opt-in.
+func defaultAuditDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "premierpro-mcp", "audit")
 }
 
 // LoadFromEnv returns a Config by starting from defaults and overriding with
@@ -66,6 +96,11 @@ func Defaults() Config {
 //	RUST_ENGINE_TIMEOUT     - timeout in seconds for Rust engine calls
 //	PYTHON_INTEL_TIMEOUT    - timeout in seconds for Python intelligence calls
 //	TS_BRIDGE_TIMEOUT       - timeout in seconds for TypeScript bridge calls
+//	PREMIERE_AUDIT_DIR      - directory for tool-call audit JSONL + snapshots
+//	                          ("off" disables auditing entirely)
+//	PREMIERE_SESSION_TAG    - session tag (e.g. Slack thread key) for audit records
+//	PREMIERE_CLAUDE_SESSION - Claude Code session ID for audit records
+//	PREMIERE_AUTO_SNAPSHOT  - "off"/"0"/"false" disables pre-mutation timeline snapshots
 func LoadFromEnv() (Config, error) {
 	cfg := Defaults()
 
@@ -125,7 +160,32 @@ func LoadFromEnv() (Config, error) {
 		cfg.TypeScriptBridgeTimeout = d
 	}
 
+	if v := os.Getenv("PREMIERE_AUDIT_DIR"); v != "" {
+		if v == "off" {
+			cfg.AuditDir = ""
+		} else {
+			cfg.AuditDir = v
+		}
+	}
+	cfg.SessionTag = envOrEmpty("PREMIERE_SESSION_TAG")
+	cfg.ClaudeSession = envOrEmpty("PREMIERE_CLAUDE_SESSION")
+	switch os.Getenv("PREMIERE_AUTO_SNAPSHOT") {
+	case "off", "0", "false":
+		cfg.AutoSnapshot = false
+	}
+
 	return cfg, nil
+}
+
+// envOrEmpty reads an env var, treating an unexpanded "${...}" placeholder
+// (which .mcp.json interpolation passes through when the variable is unset
+// in the launching environment) as absent.
+func envOrEmpty(key string) string {
+	v := os.Getenv(key)
+	if strings.HasPrefix(v, "${") {
+		return ""
+	}
+	return v
 }
 
 func parseTimeoutSeconds(s string) (time.Duration, error) {

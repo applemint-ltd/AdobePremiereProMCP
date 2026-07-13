@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "winston";
 import type { BridgeConfig } from "../config.js";
+import { requestContext } from "../context.js";
 import type { PremiereBridge } from "../bridge/interface.js";
 import { createHandlers } from "./handlers.js";
 
@@ -140,17 +141,26 @@ function wrapUnary<TReq, TRes>(
   handler: (request: TReq) => Promise<TRes>,
 ): grpc.handleUnaryCall<TReq, TRes> {
   return (call, callback) => {
-    handler(call.request)
-      .then((result) => callback(null, result))
-      .catch((err: unknown) => {
-        const grpcError: grpc.ServiceError = {
-          code: grpc.status.INTERNAL,
-          details: err instanceof Error ? err.message : String(err),
-          metadata: new grpc.Metadata(),
-          name: "ServiceError",
-          message: err instanceof Error ? err.message : String(err),
-        };
-        callback(grpcError);
-      });
+    // The Go orchestrator's audit middleware sends its correlation ID as
+    // gRPC metadata; AsyncLocalStorage carries it through the handler's
+    // whole promise chain so the CEP bridge can stamp it on WS messages.
+    const cidValue = call.metadata.get("x-correlation-id")[0];
+    const correlationId =
+      typeof cidValue === "string" ? cidValue : cidValue?.toString();
+
+    requestContext.run({ correlationId }, () => {
+      handler(call.request)
+        .then((result) => callback(null, result))
+        .catch((err: unknown) => {
+          const grpcError: grpc.ServiceError = {
+            code: grpc.status.INTERNAL,
+            details: err instanceof Error ? err.message : String(err),
+            metadata: new grpc.Metadata(),
+            name: "ServiceError",
+            message: err instanceof Error ? err.message : String(err),
+          };
+          callback(grpcError);
+        });
+    });
   };
 }

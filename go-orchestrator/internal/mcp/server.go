@@ -3,6 +3,8 @@ package mcp
 import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
+
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
 )
 
 // NewMCPServer creates and configures an MCP server that exposes all
@@ -11,7 +13,9 @@ import (
 //
 // The orchestrator parameter provides the concrete implementation that
 // each tool handler delegates to for performing actual editing operations.
-func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger) *server.MCPServer {
+// aud and snap may be nil, which disables audit persistence and pre-call
+// snapshots respectively (the middleware still assigns correlation IDs).
+func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger, aud *audit.Auditor, snap Snapshotter) *server.MCPServer {
 	if version == "" {
 		version = "dev"
 	}
@@ -24,6 +28,9 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger)
 		server.WithPromptCapabilities(true),
 		server.WithRecovery(),
 		server.WithLogging(),
+		// Registered after WithRecovery so panics recovered there still flow
+		// back through the audit middleware as errors and get recorded.
+		server.WithToolHandlerMiddleware(newAuditMiddleware(aud, snap, logger)),
 		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro through natural language. "+
 			"Available tool categories: project inspection, media scanning, timeline editing, "+
 			"script-to-edit pipeline, and export. "+

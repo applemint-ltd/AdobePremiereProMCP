@@ -91,7 +91,11 @@ function describeAttachments(files: SlackFile[] | undefined): string {
 const sessionIdsByThread = new Map<string, string>();
 
 /** Spawn `claude -p` for one turn. No shell involved, so Slack message text can't inject flags. */
-function runClaude(text: string, resumeSessionId: string | null): Promise<ClaudeResult> {
+function runClaude(
+  text: string,
+  resumeSessionId: string | null,
+  threadKey: string,
+): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
     const args = [
       "-p",
@@ -104,7 +108,16 @@ function runClaude(text: string, resumeSessionId: string | null): Promise<Claude
     }
     args.push(text);
 
-    const child = spawn("claude", args, { cwd: PROJECT_ROOT });
+    // The MCP server (spawned by claude via .mcp.json) stamps these onto its
+    // audit records, tying every tool call back to this Slack thread.
+    const child = spawn("claude", args, {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PREMIERE_SESSION_TAG: threadKey,
+        PREMIERE_CLAUDE_SESSION: resumeSessionId ?? "",
+      },
+    });
 
     let stdout = "";
     let stderr = "";
@@ -129,13 +142,13 @@ function runClaude(text: string, resumeSessionId: string | null): Promise<Claude
 async function runClaudeWithRetry(text: string, threadKey: string): Promise<ClaudeResult> {
   const resumeSessionId = sessionIdsByThread.get(threadKey) ?? null;
   try {
-    return await runClaude(text, resumeSessionId);
+    return await runClaude(text, resumeSessionId, threadKey);
   } catch (err) {
     if (resumeSessionId) {
       const msg = err instanceof Error ? err.message : String(err);
       printError(`Resume failed (${msg}), retrying as a fresh session...`);
       sessionIdsByThread.delete(threadKey);
-      return runClaude(text, null);
+      return runClaude(text, null, threadKey);
     }
     throw err;
   }

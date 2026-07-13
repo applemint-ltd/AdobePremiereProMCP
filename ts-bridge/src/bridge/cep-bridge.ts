@@ -13,6 +13,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+
+import { requestContext } from "../context.js";
 import WebSocket from "ws";
 import { createLogger, format, transports, type Logger } from "winston";
 
@@ -69,6 +71,8 @@ interface CepRequest {
   action: string;
   params: Record<string, unknown>;
   requestId: string;
+  /** Audit correlation ID from the originating MCP tool call, if any. */
+  correlationId?: string;
 }
 
 /** Incoming message from the CEP panel. */
@@ -400,6 +404,8 @@ export class CepBridge implements PremiereBridge {
   // -----------------------------------------------------------------------
 
   async evalCommand(functionName: string, argsJson: string): Promise<EvalCommandResult> {
+    const cid = requestContext.getStore()?.correlationId ?? "-";
+    const started = Date.now();
     try {
       const timeoutMs = LONG_RUNNING_EVAL_FUNCTIONS.has(functionName)
         ? LONG_RUNNING_COMMAND_TIMEOUT_MS
@@ -412,12 +418,18 @@ export class CepBridge implements PremiereBridge {
         },
         timeoutMs,
       );
+      this.log.info(
+        `EvalCommand ${functionName} ok [cid=${cid}] (${Date.now() - started}ms)`,
+      );
       return {
         resultJson: typeof result === "string" ? result : JSON.stringify(result),
         isError: false,
         errorMessage: "",
       };
     } catch (err) {
+      this.log.info(
+        `EvalCommand ${functionName} FAILED [cid=${cid}] (${Date.now() - started}ms): ${err instanceof Error ? err.message : String(err)}`,
+      );
       return {
         resultJson: "",
         isError: true,
@@ -476,6 +488,10 @@ export class CepBridge implements PremiereBridge {
     params: Record<string, unknown>,
     timeoutMs?: number,
   ): Promise<T> {
+    // Capture the correlation ID synchronously at entry: AsyncLocalStorage
+    // context is reliable here, but not inside the ws.send callback below.
+    const correlationId = requestContext.getStore()?.correlationId;
+
     return new Promise<T>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(
@@ -501,9 +517,11 @@ export class CepBridge implements PremiereBridge {
         timer,
       });
 
-      const message: CepRequest = { action, params, requestId };
+      const message: CepRequest = { action, params, requestId, correlationId };
 
-      this.log.debug(`Sending: ${action} (${requestId})`);
+      this.log.debug(
+        `Sending: ${action} (${requestId})${correlationId ? ` [cid=${correlationId}]` : ""}`,
+      );
       this.ws.send(JSON.stringify(message), (err) => {
         if (err) {
           clearTimeout(timer);

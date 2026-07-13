@@ -36,6 +36,7 @@ func newPremiereBridgeClient(addr string, dialTimeout, callTimeout time.Duration
 			Timeout:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
+		grpc.WithUnaryInterceptor(correlationUnaryInterceptor),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("premiere bridge dial %s: %w", addr, err)

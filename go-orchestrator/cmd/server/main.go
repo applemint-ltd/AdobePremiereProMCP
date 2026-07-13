@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/config"
 	grpcclients "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/grpc"
 	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/mcp"
@@ -100,8 +101,30 @@ func run() error {
 		logger,
 	)
 
+	// ── Audit trail ──────────────────────────────────────────────────
+	auditor := audit.NewAuditor(cfg.AuditDir, cfg.SessionTag, cfg.ClaudeSession)
+	captureTimeline := func(ctx context.Context) (string, error) {
+		res, err := engine.SnapshotTimeline(ctx, -1)
+		if err != nil {
+			return "", err
+		}
+		return res.Message, nil
+	}
+	snapshots := audit.NewSnapshotStore(cfg.AuditDir, cfg.SessionTag, captureTimeline)
+	var snapshotter mcp.Snapshotter
+	if cfg.AutoSnapshot && snapshots != nil {
+		snapshotter = snapshots
+	}
+	if auditor != nil {
+		logger.Info("audit trail enabled",
+			zap.String("dir", cfg.AuditDir),
+			zap.String("session", cfg.SessionTag),
+			zap.Bool("auto_snapshot", cfg.AutoSnapshot),
+		)
+	}
+
 	// ── MCP Server ────────────────────────────────────────────────────
-	mcpSrv := mcp.NewMCPServer(engine, version, logger)
+	mcpSrv := mcp.NewMCPServer(engine, version, logger, auditor, snapshotter)
 
 	// ── Serve ─────────────────────────────────────────────────────────
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
