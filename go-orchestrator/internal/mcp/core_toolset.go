@@ -125,9 +125,11 @@ var coreTools = []string{
 	"premiere_get_export_progress", "premiere_get_render_queue_status",
 	"premiere_export_audio_only",
 
-	// Assembly / pipeline
-	"premiere_assemble_from_csv", "premiere_assemble_from_edl", "premiere_assemble_from_folder_order",
-	"premiere_create_slideshow", "premiere_auto_edit", "premiere_parse_script",
+	// Assembly / pipeline (the golden path). The legacy assemble_from_* trio
+	// and create_slideshow stay in the long tail: they silently drop
+	// transitions/in-out points; the storyboard assembler replaces them.
+	"premiere_assemble_storyboard", "premiere_storyboard_validate", "premiere_storyboard_schema",
+	"premiere_auto_edit", "premiere_parse_script",
 
 	// State / audit / safety
 	"premiere_dump_project_state", "premiere_dump_sequence_state", "premiere_snapshot_timeline",

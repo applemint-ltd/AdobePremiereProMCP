@@ -73,11 +73,16 @@ THE GOLDEN WORKFLOW (storyboard + clips -> reviewable cut):
  2. premiere_get_project / premiere_new_project / premiere_open_project.
  3. Get media in: premiere_fetch_slack_attachment (Slack uploads),
     premiere_import_media / premiere_import_files, premiere_scan_assets for folders.
- 4. Build the cut: place clips by project-item with premiere_insert_clip /
-    premiere_overwrite_clip (non-ripple), trim with premiere_create_subclip /
-    premiere_trim_clip_end, transitions with premiere_add_transition.
-    premiere_parse_script parses narration/scripts; premiere_auto_edit runs
-    the script-to-timeline pipeline.
+ 4. Build the cut with the STORYBOARD pipeline (preferred):
+    premiere_storyboard_schema -> emit/collect a storyboard (JSON, shot-list
+    CSV, or script via script_text + assets_directory) ->
+    premiere_storyboard_validate (dry run; show the user unresolved clips) ->
+    premiere_assemble_storyboard (per-shot report: placements, transitions
+    applied-or-reported, baked-PNG text, SRT captions, music bed).
+    For manual edits: premiere_insert_clip / premiere_overwrite_clip
+    (non-ripple), premiere_create_subclip + premiere_trim_clip_end,
+    premiere_add_transition. premiere_auto_edit runs script->match->assemble
+    end-to-end through the same executor.
  5. Show your work: premiere_capture_frame_base64 for a frame of the timeline.
  6. Iterate with clip/audio/lumetri/transform tools.
  7. Export: premiere_export (semantic presets: h264_1080p, h264_4k, prores_422,

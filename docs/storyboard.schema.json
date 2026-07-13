@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "premierpro-mcp/storyboard/v1",
+  "title": "Storyboard",
+  "description": "Canonical storyboard: an ordered plan of shots assembled onto a Premiere Pro timeline. Reference clips by NAME or file path, never by index. Times are seconds.",
+  "type": "object",
+  "required": ["scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "storyboard/v1" },
+    "title": { "type": "string" },
+    "sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Sequence to create or reuse; default: derived from title" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "fps": { "type": "number" }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["shots"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "shots": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string" },
+                "clip": { "type": "string", "description": "Project item name, file basename, or absolute file path. Omit only for text-only cards." },
+                "duration_seconds": { "type": "number", "minimum": 0, "description": "Target on-timeline duration. 0/omitted = natural length." },
+                "trim": {
+                  "type": "object",
+                  "required": ["from_seconds", "to_seconds"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "from_seconds": { "type": "number", "minimum": 0 },
+                    "to_seconds": { "type": "number", "exclusiveMinimum": 0 }
+                  },
+                  "description": "Source-time range to use from the clip."
+                },
+                "text": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["content"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "content": { "type": "string" },
+                      "style": { "type": "string", "enum": ["title", "lower_third", "caption_card"] },
+                      "start_offset_seconds": { "type": "number", "minimum": 0 },
+                      "duration_seconds": { "type": "number", "minimum": 0 }
+                    }
+                  },
+                  "description": "On-screen text, rendered as a baked PNG layer (the only text that renders on Premiere 2026)."
+                },
+                "caption": { "type": "string", "description": "Spoken/subtitle line for this shot; collected into an SRT caption track." },
+                "transition_after": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string", "description": "e.g. \"Cross Dissolve\" (default)" },
+                    "duration_seconds": { "type": "number", "exclusiveMinimum": 0 }
+                  }
+                },
+                "vo_note": { "type": "string" },
+                "notes": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "music": {
+      "type": "object",
+      "required": ["clip"],
+      "additionalProperties": false,
+      "properties": {
+        "clip": { "type": "string" },
+        "level_db": { "type": "number" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

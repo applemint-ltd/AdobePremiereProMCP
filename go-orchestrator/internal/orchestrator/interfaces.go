@@ -1,6 +1,10 @@
 package orchestrator
 
-import "context"
+import (
+	"context"
+
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/storyboard"
+)
 
 // MediaClient abstracts the Rust media engine gRPC service.
 // Implementations live in internal/grpc and translate between Go-native types
@@ -68,9 +72,6 @@ type PremiereClient interface {
 
 	// ExportSequence starts an export job for a sequence.
 	ExportSequence(ctx context.Context, params *ExportParams) (*ExportResult, error)
-
-	// ExecuteEDL assembles an entire timeline from an edit decision list.
-	ExecuteEDL(ctx context.Context, edl *EDL) (*EDLExecutionResult, error)
 
 	// EvalAudioCommand runs an audio/track management ExtendScript function.
 	EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error)
@@ -501,6 +502,11 @@ type Orchestrator interface {
 
 	// --- Composite Workflows ---
 	AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEditResult, error)
+
+	// --- Storyboard Assembly (the golden path) ---
+	AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboard, opts AssembleStoryboardOptions) (*AssemblyReport, error)
+	ValidateStoryboard(ctx context.Context, sb *storyboard.Storyboard) (map[string]any, error)
+	StoryboardFromScript(ctx context.Context, scriptText, scriptPath, scriptFormat, assetsDirectory string) (*storyboard.Storyboard, []string, error)
 
 	// --- AI-Powered Smart Editing ---
 	SmartCut(ctx context.Context, params *SmartCutParams) (*SmartCutResult, error)

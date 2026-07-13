@@ -243,26 +243,6 @@ func (a *PremiereAdapter) ExportSequence(ctx context.Context, params *orch.Expor
 	}, nil
 }
 
-func (a *PremiereAdapter) ExecuteEDL(ctx context.Context, edl *orch.EDL) (*orch.EDLExecutionResult, error) {
-	grpcEDL := convertOrchestratorEDLToGRPC(edl)
-	grpcParams := ExecuteEDLParams{
-		EDL:                grpcEDL,
-		AutoImport:         true,
-		AutoCreateSequence: true,
-	}
-	res, err := a.C.ExecuteEDL(ctx, grpcParams)
-	if err != nil {
-		return nil, err
-	}
-	return &orch.EDLExecutionResult{
-		SequenceID:       res.SequenceID,
-		Status:           operationStatusToString(res.Status),
-		ClipsPlaced:      res.ClipsPlaced,
-		TransitionsAdded: res.TransitionsAdded,
-		Errors:           res.Errors,
-		Warnings:         res.Warnings,
-	}, nil
-}
 
 func (a *PremiereAdapter) EvalAudioCommand(ctx context.Context, command string, args map[string]any) (map[string]any, error) {
 	return a.C.EvalAudioCommand(ctx, command, args)

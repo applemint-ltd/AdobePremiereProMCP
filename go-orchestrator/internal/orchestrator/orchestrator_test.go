@@ -358,11 +358,16 @@ func TestAutoEdit(t *testing.T) {
 		},
 	}
 	premiere := &mockPremiereClient{
-		edlExecResult: &EDLExecutionResult{
-			SequenceID:       "seq-100",
-			Status:           "completed",
-			ClipsPlaced:      2,
-			TransitionsAdded: 1,
+		seqResult: &SequenceResult{SequenceID: "seq-100", Name: "auto-edit-edl"},
+		// Canned host responses for the storyboard executor's primitives.
+		evalResults: map[string]string{
+			"getProjectItems": `{"items":[
+				{"index":0,"name":"a.mp4","type":"clip","media_path":"/tmp/a.mp4"},
+				{"index":1,"name":"b.mp4","type":"clip","media_path":"/tmp/b.mp4"}]}`,
+			"overwriteClip": `{"action":"overwrite"}`,
+			"getClipsOnTrack": `{"clips":[
+				{"index":0,"name":"a.mp4","start":0,"end":3,"duration":3},
+				{"index":1,"name":"b.mp4","start":3,"end":6,"duration":3}]}`,
 		},
 	}
 

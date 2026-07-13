@@ -244,30 +244,35 @@ func (e *Engine) AutoEdit(ctx context.Context, params *AutoEditParams) (*AutoEdi
 	)
 
 	// -----------------------------------------------------------------------
-	// Step 4: Execute EDL in Premiere Pro (TypeScript bridge)
+	// Step 4: Assemble the timeline. The EDL is converted to the canonical
+	// storyboard and executed by the same Go loop as every other assembly
+	// path. (The old route sent an "executeEDL" action the CEP panel never
+	// implemented — it failed with "Unknown action" against a live Premiere.)
 	// -----------------------------------------------------------------------
 	step4Start := time.Now()
-	e.logger.Info("auto_edit: step 4 — executing EDL in Premiere Pro",
+	e.logger.Info("auto_edit: step 4 — assembling timeline from EDL",
 		zap.Int("entries", len(edl.Entries)),
 	)
 
-	execResult, err := e.premiere.ExecuteEDL(ctx, edl)
+	sb := StoryboardFromEDL(edl, scanResult.Assets)
+	assembly, err := e.AssembleStoryboard(ctx, sb, AssembleStoryboardOptions{SequenceName: edl.Name})
 	if err != nil {
 		step4Duration := time.Since(step4Start)
 		result.Steps = append(result.Steps, &StepStatus{
-			Name:     "execute_edl",
+			Name:     "assemble_timeline",
 			Status:   "failed",
 			Duration: step4Duration,
 			Error:    err.Error(),
 		})
 		result.TotalDuration = time.Since(pipelineStart)
 		e.logger.Error("auto_edit: step 4 failed", zap.Error(err))
-		return result, fmt.Errorf("auto_edit step 4 (execute EDL): %w", err)
+		return result, fmt.Errorf("auto_edit step 4 (assemble timeline): %w", err)
 	}
 
+	execResult := assemblyToEDLExecution(assembly)
 	result.ExecutionResult = execResult
 	result.Steps = append(result.Steps, &StepStatus{
-		Name:     "execute_edl",
+		Name:     "assemble_timeline",
 		Status:   "completed",
 		Duration: time.Since(step4Start),
 		Detail: fmt.Sprintf("placed %d clips, added %d transitions, %d warnings",

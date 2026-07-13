@@ -538,32 +538,49 @@ function addTransition(trackIndex, clipIndex, transitionName, duration) {
 
         var clip = track.clips[clipIndex];
 
-        // Apply transition at the end of the clip
-        // Premiere's DOM uses QE (Quick Export) domain for transitions in some versions
+        // Apply transition at the end of the clip. Track WHICH branch (if
+        // any) actually did something -- this function used to return _ok
+        // even when neither the DOM nor the QE branch applied anything,
+        // which read as success while the timeline stayed untouched.
         var transitionDuration = _secondsToTime(duration);
+        var applied = false;
+        var method = "none";
+        var reason = "";
 
-        // Try using the TrackItem's transitions
         if (clip.setEndTransition) {
             clip.setEndTransition(transitionName, transitionDuration);
+            applied = true;
+            method = "setEndTransition";
         } else if (typeof qe !== "undefined" && qe.project) {
-            // Fallback: QE DOM approach
             var qeSeq = qe.project.getActiveSequence();
             if (qeSeq) {
                 var qeTrack = qeSeq.getVideoTrackAt(trackIndex);
                 if (qeTrack) {
                     var qeClip = qeTrack.getItemAt(clipIndex);
                     if (qeClip) {
-                        qeClip.addTransition(
-                            qe.project.getVideoTransitionByName(transitionName || "Cross Dissolve"),
-                            true,  // at end
-                            duration.toString()
-                        );
-                    }
-                }
-            }
+                        var qeTransition = qe.project.getVideoTransitionByName(transitionName || "Cross Dissolve");
+                        if (qeTransition) {
+                            qeClip.addTransition(
+                                qeTransition,
+                                true,  // at end
+                                duration.toString()
+                            );
+                            applied = true;
+                            method = "qe";
+                        } else {
+                            reason = "QE has no transition named '" + (transitionName || "Cross Dissolve") + "'";
+                        }
+                    } else { reason = "QE clip not found at index " + clipIndex; }
+                } else { reason = "QE track not found at index " + trackIndex; }
+            } else { reason = "QE active sequence unavailable"; }
+        } else {
+            reason = "neither setEndTransition nor the QE DOM is available in this Premiere version";
         }
 
         return _ok({
+            applied: applied,
+            method: method,
+            reason: reason,
             trackIndex: trackIndex,
             clipIndex: clipIndex,
             transitionName: transitionName || "Cross Dissolve",

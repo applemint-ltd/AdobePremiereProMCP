@@ -94,6 +94,9 @@ type mockPremiereClient struct {
 	edlExecErr       error
 	evalResult       string
 	evalErr          error
+	// evalResults, when set, dispatches EvalCommand responses per host
+	// function name (falling back to evalResult/evalErr).
+	evalResults map[string]string
 	evalAudioResult  map[string]any
 	evalAudioErr     error
 	evalImmResult    map[string]any
@@ -144,11 +147,13 @@ func (m *mockPremiereClient) ExportSequence(_ context.Context, _ *ExportParams) 
 	return m.exportResult, m.exportErr
 }
 
-func (m *mockPremiereClient) ExecuteEDL(_ context.Context, _ *EDL) (*EDLExecutionResult, error) {
-	return m.edlExecResult, m.edlExecErr
-}
 
-func (m *mockPremiereClient) EvalCommand(_ context.Context, _ string, _ string) (string, error) {
+func (m *mockPremiereClient) EvalCommand(_ context.Context, functionName string, _ string) (string, error) {
+	if m.evalResults != nil {
+		if res, ok := m.evalResults[functionName]; ok {
+			return res, nil
+		}
+	}
 	return m.evalResult, m.evalErr
 }
 
