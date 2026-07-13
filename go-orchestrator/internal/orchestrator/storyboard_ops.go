@@ -72,7 +72,10 @@ type AssemblyReport struct {
 // projectItems fetches the root-level project items in the shape the
 // storyboard resolver wants.
 func (e *Engine) projectItems(ctx context.Context) ([]storyboard.Item, error) {
-	result, err := e.premiere.EvalCommand(ctx, "getProjectItems", "{}")
+	// binPath must be named explicitly: __invoke spreads named args onto
+	// positional params, and with an empty object it falls back to passing
+	// the raw JSON string as binPath ("Bin not found: {}").
+	result, err := e.premiere.EvalCommand(ctx, "getProjectItems", `{"binPath":""}`)
 	if err != nil {
 		return nil, fmt.Errorf("list project items: %w", err)
 	}

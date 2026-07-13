@@ -223,36 +223,35 @@ function createSequence(paramsJson) {
 
         // createNewSequence requires BOTH arguments on Premiere 2026 -- the
         // one-arg call silently created nothing (verified live); the second
-        // arg is a placeholder ID string.
-        var seqID = app.project.createNewSequence(name, "");
+        // arg is a placeholder ID string. Its return value on 2026 is the
+        // whole Sequence DOM object (NOT an id string) -- never serialize
+        // it, or the response explodes into a non-JSON blob.
+        var created = app.project.createNewSequence(name, "");
 
-        if (seqID) {
-            // Try to set properties on the newly created sequence
-            var seq = app.project.activeSequence;
-            if (seq) {
-                // Setting frame size may require sequence presets in newer versions
-                // These settings work through sequence settings dialog in practice,
-                // but we attempt to set them programmatically
-                try {
-                    seq.frameSizeHorizontal = width;
-                    seq.frameSizeVertical = height;
-                } catch (dimErr) {
-                    // Frame dimensions may not be directly settable in all versions
-                }
+        var seq = app.project.activeSequence;
+        if (created && seq) {
+            // Setting frame size may require sequence presets in newer versions
+            // These settings work through sequence settings dialog in practice,
+            // but we attempt to set them programmatically
+            try {
+                seq.frameSizeHorizontal = width;
+                seq.frameSizeVertical = height;
+            } catch (dimErr) {
+                // Frame dimensions may not be directly settable in all versions
             }
 
             return _ok({
-                name: name,
-                sequenceID: seqID || "",
+                name: seq.name || name,
+                sequenceID: seq.sequenceID || "",
                 width: width,
                 height: height,
                 fps: fps,
-                videoTrackCount: seq ? (seq.videoTracks ? seq.videoTracks.numTracks : 0) : 0,
-                audioTrackCount: seq ? (seq.audioTracks ? seq.audioTracks.numTracks : 0) : 0,
-                timebase: seq ? (seq.timebase || "") : ""
+                videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
+                audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
+                timebase: seq.timebase || ""
             });
         } else {
-            return _err("createNewSequence returned no ID");
+            return _err("createNewSequence did not create/activate a sequence");
         }
     } catch (e) {
         return _err("createSequence failed: " + e.message);
@@ -3797,7 +3796,15 @@ function deleteBin(binPath) {
         if (bin === app.project.rootItem) return _err("Cannot delete the root bin");
 
         var binName = bin.name;
-        app.project.deleteAsset(bin);
+        // app.project.deleteAsset no longer exists on Premiere 2026; bins
+        // delete themselves via ProjectItem.deleteBin().
+        if (typeof bin.deleteBin === "function") {
+            bin.deleteBin();
+        } else if (typeof app.project.deleteAsset === "function") {
+            app.project.deleteAsset(bin);
+        } else {
+            return _err("No bin-deletion API available in this Premiere version");
+        }
 
         return _ok({ deleted: true, binPath: binPath, binName: binName });
     } catch (e) {
