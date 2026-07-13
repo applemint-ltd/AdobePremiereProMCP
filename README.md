@@ -24,9 +24,36 @@ Video editors spend hours on repetitive tasks: syncing clips, rough cuts, color 
 
 **No plugins. No subscriptions. Fully open source.**
 
-## Features -- 1,060 MCP Tools
+## Features
 
-This is the most comprehensive MCP server for any NLE (non-linear editor). Every tool maps to real Adobe Premiere Pro ExtendScript and QE DOM operations.
+**By default the server exposes a curated set of ~190 tools verified to work
+on Premiere Pro 2026.** Over a thousand tools are registered in the codebase,
+but a large share of the long tail depends on APIs Adobe removed or the
+undocumented QE DOM; exposing them made AI agents fail unpredictably.
+Verified-broken tools are never registered; the unverified long tail is
+available behind `MCP_EXPOSE_ALL_TOOLS=1`, and arbitrary-execution escape
+hatches (`premiere_execute_extendscript`, `premiere_execute_system_command`,
+file writers, …) require `MCP_ENABLE_ESCAPE_HATCHES=1`. **Set neither flag on
+a shared hub** — the Slack bot allowlists every registered tool. See
+`go-orchestrator/internal/mcp/core_toolset.go` for the exact policy, enforced
+by tests.
+
+Highlights of the curated surface:
+
+- **Storyboard pipeline** — hand over a script, a simple shot-list CSV, or
+  storyboard JSON plus clips; get an assembled sequence with a per-shot
+  report ([`docs/STORYBOARD_SCHEMA.md`](docs/STORYBOARD_SCHEMA.md)).
+- **Audit trail** — every tool call is persisted with a correlation ID that
+  spans all layers; `premiere_what_changed` diffs the timeline against
+  pre-edit snapshots and `premiere_get_session_digest` answers "what did the
+  AI do?" in plain language.
+- **Remote review loop** — low-bitrate preview exports, ffmpeg contact
+  sheets, frame captures, and Slack uploads so a remote user can see the cut.
+- **Honest failures** — empty/hollow ExtendScript responses, unapplied
+  transitions, and unconfirmed exports surface as errors or explicit
+  warnings, never silent success.
+
+The full registered catalog (including the flagged long tail):
 
 | Category | Tools | What You Can Do |
 |---|---|---|
@@ -64,7 +91,16 @@ This is the most comprehensive MCP server for any NLE (non-linear editor). Every
 | **Analytics** | 30 | Project/sequence summaries, codec/resolution breakdowns, pacing, comparison reports |
 | **Effect Chains** | 30 | Effect chain management, visual presets (sepia, vintage, glow), transition control |
 
-**Total: 907 tools** across 33 source files. [View the full feature plan](docs/feature-plan.md).
+**Registered: 1,000+ tools** across ~45 source files; **exposed by default:
+the ~190-tool verified core set** (see above). [View the full feature plan](docs/feature-plan.md).
+
+> **Premiere 2026 reality check:** scripted native text does not render
+> (text works via the baked-PNG `premiere_add_text_layer`), captions come
+> from SRT import (no speech-to-text), frame stills render via a
+> still-export preset (`seq.exportFramePNG` was removed), and exports queue
+> in Adobe Media Encoder. A CEP→UXP migration was assessed and deferred —
+> see [`docs/UXP_MIGRATION_COVERAGE.md`](docs/UXP_MIGRATION_COVERAGE.md);
+> a Phase-0 spike against the live UXP module is the suggested next step.
 
 ## Supported Premiere Pro Versions
 

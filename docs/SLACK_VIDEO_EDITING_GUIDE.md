@@ -12,11 +12,11 @@ If you can send a Slack message, you can use this.
 There's one shared computer in the office (the "hub") with Adobe Premiere
 Pro and an AI assistant connected to it. That assistant is listening in a
 dedicated Slack channel. You type what you want in plain English -- "trim
-the intro down to 10 seconds," "add our logo in the corner" -- and it makes
-the edit directly inside the real Premiere Pro project on the hub machine.
-When it's done, it replies to tell you what it did, and the finished file
-shows up wherever exports are set up to land (usually a shared Google Drive
-folder).
+the intro down to 10 seconds," "add a title that says Summer Recap" -- and
+it makes the edit directly inside the real Premiere Pro project on the hub
+machine. When it's done, it replies to tell you what it did, posts preview
+images or clips **right into your thread** so you can see the result, and
+uploads the finished video into the thread when you ask for an export.
 
 ---
 
@@ -58,8 +58,8 @@ bot (in thread): Slowed the first 3 seconds to 75% speed and added a music
                  bed from the stock library.
 
 you (in thread): Perfect, now export it as 1080p for YouTube
-bot (in thread): Exported "Promo Cut" as 1080p H.264 to the shared export
-                 folder.
+bot (in thread): Rendering now -- I'll post the file here when it's done.
+bot (in thread): [Promo Cut.mp4] Done -- 1080p H.264, 31 seconds.
 ```
 
 Each thread remembers the conversation that happened in it, so you don't
@@ -80,6 +80,31 @@ Import this and use it to replace the shaky clip at the start
 The bot downloads the file and imports it into the Premiere Pro project
 automatically -- you don't need to put it anywhere on a shared drive first.
 
+## 4b. Handing over a whole storyboard
+
+The fastest way to a first cut is to give the bot everything at once: drop
+your clips into the thread (or name a folder on the hub) together with
+either
+
+- **a script or narration document** -- it will read it, match your footage
+  to it, and assemble a cut; or
+- **a simple shot list** -- a spreadsheet/CSV with one row per shot. Only a
+  `clip` column is required; `duration`, `from`/`to` (to use just part of a
+  clip), `text` (on-screen title), `caption` (subtitle line), and
+  `transition` are all optional:
+
+```csv
+order,clip,duration,from,to,text,caption,transition
+1,beach,4,,,SUMMER 2026,It started with one perfect week.,dissolve
+2,drone_042,,0:12,0:18,,,cut
+3,interview,6,,,,So we packed everything.,fade to black
+```
+
+Before building anything, the bot checks every clip name against the
+project and tells you which ones it couldn't find -- so a typo becomes a
+question back to you, not a missing shot. After assembling, it posts a
+preview so you can see the cut.
+
 ## 5. Starting over
 
 If you finished one video and want to move on to something unrelated, say
@@ -95,12 +120,12 @@ from the last video.
 
 ## 6. Getting your finished video
 
-Once you ask for an export, the bot's reply will tell you what it exported
-and confirm it's done. The actual file lands wherever the export folder is
-configured -- typically a folder that syncs automatically to Google Drive,
-so it shows up for everyone with access, usually within a minute or two of
-the export finishing. If you're not sure where that is, ask whoever runs
-the hub machine.
+Ask for an export and the bot queues the render, waits for it to finish,
+and **uploads the file into your thread**. Renders take real time -- a few
+minutes for longer videos -- and the bot will only say "done" once the file
+actually exists (if it can't confirm, it says so instead of guessing). The
+file also stays on the hub machine's project folder if you ever need it
+again.
 
 ---
 
@@ -111,16 +136,18 @@ across common tasks:
 
 | You want to... | Say something like... |
 |---|---|
-| Start a rough cut | "Edit this video using script.pdf with the footage in the Footage bin" |
+| Start a rough cut | "Here's the script and the clips -- build a first cut" (attach files or a shot list, see section 4b) |
 | Trim something | "Cut clip_02 down to just the first 15 seconds" |
 | Add a transition | "Add a cross dissolve between the first two clips" |
-| Add titles / names | "Add a lower-third that says 'Jane Doe, Marketing Lead' at the start" |
+| Add titles / names | "Add a lower-third that says 'Jane Doe, Marketing Lead' at the start" (rendered as an image overlay -- see Things to know) |
 | Fix audio | "The interview audio is too quiet, bring it up to a normal level" |
 | Color | "Warm up the color a bit on the outdoor shots" |
 | Add music | "Add a music bed under the whole thing and duck it under the dialogue" |
-| Captions | "Auto-generate subtitles for this" |
-| Multiple versions | "Export this as both a 16:9 for YouTube and a vertical 9:16 for Instagram" |
-| Check before sending | "Does this have any silent gaps or black frames I should know about?" |
+| Captions | "Add captions" -- give it the lines (in a shot list, the script, or an attached SRT file). There's no automatic speech-to-text, so it can't transcribe audio by itself. |
+| See the cut | "Show me a preview" (posts a small MP4) / "show me a frame at 0:12" / "give me a contact sheet" (grid of frames) |
+| Export | "Export this as 1080p for YouTube" -- posted into the thread when the render finishes. (Vertical 9:16 re-framing isn't supported; videos export at their sequence shape.) |
+| Check before sending | "Are there any gaps or black frames I should know about?" |
+| Audit trail | "What did you do?" / "what changed in the last edit?" |
 
 If a request is ambiguous, the bot will usually ask a follow-up question in
 the thread rather than guess -- just answer it like you would a colleague.
@@ -134,8 +161,9 @@ the thread rather than guess -- just answer it like you would a colleague.
 - **Be specific about which clip/section** when there's more than one clip
   in play ("the second clip," "the intro," "clip_04.mp4") -- it helps more
   than a vague "make it better."
-- **Ask it to check its own work.** Things like "play back the last 10
-  seconds" or "does the audio clip anywhere?" are fair game.
+- **Ask to see it.** "Show me" gets you a preview frame or clip posted in
+  the thread -- much faster than exporting the whole video to check one
+  change. "What did you do?" gets a plain-language list of every change.
 - **It's fine to iterate.** Small follow-up requests in the same thread
   ("a little faster," "move that up 2 seconds") are exactly how this is
   meant to be used.
@@ -153,6 +181,13 @@ the thread rather than guess -- just answer it like you would a colleague.
 - **It only knows what's in the thread.** If you switch to a new
   top-level message or someone runs "reset," it starts with a clean slate
   and won't remember earlier decisions unless you repeat them.
+- **Expect real render times.** A preview frame takes ~10 seconds; a
+  preview clip or export takes minutes for longer videos. The bot posts the
+  result when it's actually finished.
+- **On-screen text is an image, not a Premiere text layer.** Premiere Pro
+  2026 can't render text added by automation, so titles/lower-thirds are
+  baked as crisp image overlays. They look right in the video; to change
+  the wording, just ask the bot -- don't try to double-click it in Premiere.
 
 ---
 
@@ -161,10 +196,13 @@ the thread rather than guess -- just answer it like you would a colleague.
 - **No 👀 reaction and no reply after a minute or two:** the bot (or the
   hub machine, or Premiere Pro itself) is probably not running. Ping
   whoever administers the hub.
-- **The bot replies with an error or "Failed: ...":** read the message --
-  it's usually specific (e.g. a file wasn't found, or a clip name didn't
-  match anything in the project). Try rephrasing with the exact file or
-  clip name, or check that the footage was actually imported.
+- **The bot says something went wrong:** it will tell you in plain words
+  what failed (e.g. a clip name didn't match anything, or Premiere is
+  offline) and includes a short reference code operators can use to find
+  the full details in the hub's logs. Try rephrasing with the exact file or
+  clip name, or ping the hub admin with the reference.
+- **Not sure what it actually changed:** ask "what did you do?" in the
+  thread -- every edit is recorded, and it will list them in order.
 - **It seems to have forgotten something you said earlier:** you may have
   accidentally started a new thread instead of replying in the existing
   one, or someone ran "reset." Just restate what you need.

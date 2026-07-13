@@ -29,7 +29,7 @@ No plugins. No subscriptions. Fully open source under the MIT license.
 
 ### What can it do?
 
-PremierPro MCP provides **907 tools** organized across 36 source files, covering every major aspect of Premiere Pro:
+PremierPro MCP registers over 1,000 tools, but **exposes a curated set of ~190 verified to work on Premiere Pro 2026 by default** — broken tools are never registered, and the unverified long tail plus arbitrary-execution escape hatches sit behind `MCP_EXPOSE_ALL_TOOLS=1` / `MCP_ENABLE_ESCAPE_HATCHES=1` (never set these on a shared hub; the Slack bot can call every registered tool). The full registered catalog:
 
 | Category | Tools | What You Can Do |
 |---|---|---|
