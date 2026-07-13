@@ -32,13 +32,29 @@ const ALLOWED_TOOLS = "mcp__premierpro-mcp__*";
 const LOGS_DIR = path.join(PROJECT_ROOT, "scripts", "logs");
 const TURN_LOG_DIR = path.join(LOGS_DIR, "slack-threads");
 
-const SYSTEM_PROMPT_ADDITION = `You are responding inside a Slack channel where teammates ask you to make
-edits in Adobe Premiere Pro. You have access only to the premierpro-mcp
-tools (project, timeline, effects, export, etc.) -- no Bash, file, or web
-tools. Use them to fulfill each request. If Premiere Pro is not running,
-launch it first. Keep replies short, plain, and conversational (this is a
-Slack message, not a report) -- summarize what you did rather than dumping
-tool output.`;
+const SYSTEM_PROMPT_ADDITION = `You are responding inside a Slack channel where teammates (NOT video
+editors) ask you to make edits in Adobe Premiere Pro. You have access only
+to the premierpro-mcp tools -- no Bash, file, or web tools. If Premiere Pro
+is not running, launch it first.
+
+Working style:
+- For "storyboard + clips" requests, use the storyboard pipeline:
+  premiere_storyboard_validate first (tell the user about any clips you
+  couldn't match), then premiere_assemble_storyboard.
+- SHOW your work: after meaningful timeline changes, capture a frame
+  (premiere_capture_frame_base64 with save_path) or export a preview
+  (premiere_export_preview), and post it into this thread with
+  premiere_post_file_to_slack using the [Slack context] channel/thread.
+  Always post finished exports back into the thread the same way.
+- Exports QUEUE in Adobe Media Encoder: only say a video is ready when the
+  tool reports the file completed.
+- End each turn with 1-3 plain-language bullets of what changed. If the user
+  asks "what did you do?", call premiere_get_session_digest.
+- Speak plainly: clip names and minutes:seconds -- never track indices, raw
+  seconds, file-format internals, or tool names.
+- If something fails, say what failed in plain words and what you'll try
+  instead; never paste raw error dumps.
+Keep replies short and conversational -- this is Slack, not a report.`;
 
 interface ClaudeResult {
   result?: string;
@@ -76,6 +92,28 @@ interface IncomingMessage {
  * downloads directly (given SLACK_BOT_TOKEN) -- the bot itself never fetches
  * or decodes the bytes, it just passes the reference along.
  */
+/**
+ * Map raw failures onto messages a non-technical Slack user can act on.
+ * The full error still goes to the turn log and stdout for operators.
+ */
+function friendlyError(err: unknown, threadKey: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const table: Array<[RegExp, string]> = [
+    [/ECONNREFUSED|50054|9801|websocket|bridge|EvalCommand|ExtendScript/i,
+      "I can't reach Premiere Pro right now — the editing bridge on the hub machine looks offline. An operator may need to restart it."],
+    [/premiere.*not.*running|no project is open/i,
+      "Premiere Pro isn't running (or no project is open) on the hub machine. I'll need it up before I can edit."],
+    [/rate|overloaded|429|busy/i,
+      "The AI service is busy right now — give it a minute and try again."],
+    [/--resume|session/i,
+      "I lost the thread's memory and couldn't recover it. Say \"new project\" to start fresh."],
+  ];
+  for (const [re, msg] of table) {
+    if (re.test(raw)) return msg;
+  }
+  return `Something went wrong on my side. An operator can check the logs (ref \`${threadKey}\`).`;
+}
+
 function describeAttachments(files: SlackFile[] | undefined): string {
   if (!files || files.length === 0) return "";
   const lines = files
@@ -109,6 +147,9 @@ function runClaude(
     ];
     if (resumeSessionId) {
       args.push("--resume", resumeSessionId);
+    }
+    if (process.env.SLACK_BOT_CLAUDE_MODEL) {
+      args.push("--model", process.env.SLACK_BOT_CLAUDE_MODEL);
     }
     args.push(text);
 
@@ -238,7 +279,10 @@ async function main(): Promise<void> {
 
     const promptText =
       (text || "Import the attached file(s) into the current Premiere Pro project.") +
-      describeAttachments(msg.files);
+      describeAttachments(msg.files) +
+      // Lets the agent post previews/exports back into this exact thread via
+      // premiere_post_file_to_slack without the bot growing upload logic.
+      `\n\n[Slack context: channel=${msg.channel} thread_ts=${threadKey} — pass these to premiere_post_file_to_slack when sharing previews or exports]`;
 
     const turnStarted = Date.now();
     try {
@@ -278,7 +322,7 @@ async function main(): Promise<void> {
         error: errMsg.slice(0, 1000),
       });
       printError(`Chat error: ${errMsg}`);
-      await say({ text: `Something went wrong: ${errMsg}`, thread_ts: threadKey });
+      await say({ text: friendlyError(err, threadKey), thread_ts: threadKey });
     }
   }
 

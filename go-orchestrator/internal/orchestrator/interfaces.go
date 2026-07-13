@@ -21,6 +21,10 @@ type MediaClient interface {
 
 	// DetectScenes finds scene-change boundaries in a video file.
 	DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error)
+
+	// GenerateThumbnail extracts one frame of a media file as image bytes
+	// (ffmpeg-backed; works on any file on disk, independent of Premiere).
+	GenerateThumbnail(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error)
 }
 
 // IntelClient abstracts the Python intelligence gRPC service.
@@ -507,6 +511,11 @@ type Orchestrator interface {
 	AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboard, opts AssembleStoryboardOptions) (*AssemblyReport, error)
 	ValidateStoryboard(ctx context.Context, sb *storyboard.Storyboard) (map[string]any, error)
 	StoryboardFromScript(ctx context.Context, scriptText, scriptPath, scriptFormat, assetsDirectory string) (*storyboard.Storyboard, []string, error)
+
+	// --- Remote review loop ---
+	ExportPreview(ctx context.Context, outputName string) (*ExportPreviewResult, error)
+	GenerateReviewContactSheet(ctx context.Context, videoPath string, cols, rows int) (*ContactSheetResult, error)
+	PostFileToSlack(ctx context.Context, filePath, channelID, threadTS, title, comment string) (*PostFileResult, error)
 
 	// --- AI-Powered Smart Editing ---
 	SmartCut(ctx context.Context, params *SmartCutParams) (*SmartCutResult, error)

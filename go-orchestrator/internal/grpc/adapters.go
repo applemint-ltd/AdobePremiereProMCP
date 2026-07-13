@@ -323,6 +323,27 @@ func (a *MediaAdapter) AnalyzeWaveform(ctx context.Context, filePath string, opt
 	}, nil
 }
 
+func (a *MediaAdapter) GenerateThumbnail(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error) {
+	secs := uint32(atSeconds)
+	frames := uint32((atSeconds - float64(secs)) * 30)
+	res, err := a.C.GenerateThumbnail(ctx, GenerateThumbnailParams{
+		FilePath: filePath,
+		Timestamp: Timecode{
+			Hours:     secs / 3600,
+			Minutes:   (secs % 3600) / 60,
+			Seconds:   secs % 60,
+			Frames:    frames,
+			FrameRate: 30,
+		},
+		OutputSize:   Resolution{Width: uint32(width), Height: uint32(height)},
+		OutputFormat: format,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.ThumbnailData, nil
+}
+
 func (a *MediaAdapter) DetectScenes(ctx context.Context, filePath string, threshold float64) (*orch.SceneResult, error) {
 	res, err := a.C.DetectScenes(ctx, DetectScenesParams{
 		FilePath:  filePath,

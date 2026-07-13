@@ -17,6 +17,8 @@ type mockMediaClient struct {
 	waveformErr   error
 	sceneResult   *SceneResult
 	sceneErr      error
+	thumbnailData []byte
+	thumbnailErr  error
 }
 
 func (m *mockMediaClient) ScanAssets(_ context.Context, _ string, _ bool, _ []string) (*ScanResult, error) {
@@ -33,6 +35,10 @@ func (m *mockMediaClient) AnalyzeWaveform(_ context.Context, _ string, _ *Wavefo
 
 func (m *mockMediaClient) DetectScenes(_ context.Context, _ string, _ float64) (*SceneResult, error) {
 	return m.sceneResult, m.sceneErr
+}
+
+func (m *mockMediaClient) GenerateThumbnail(_ context.Context, _ string, _ float64, _, _ int, _ string) ([]byte, error) {
+	return m.thumbnailData, m.thumbnailErr
 }
 
 // ---------------------------------------------------------------------------

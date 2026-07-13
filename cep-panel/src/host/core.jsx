@@ -1217,8 +1217,11 @@ function captureFrameAsBase64(argsJson) {
         var seq = _getActiveSequence();
         if (!seq) return _err("No active sequence.");
 
+        // savePath keeps the rendered frame on disk (e.g. to hand to
+        // premiere_post_file_to_slack) instead of deleting the temp file.
+        var savePath = args.savePath || args.save_path || "";
         var tempDir = Folder.temp.fsName;
-        var tempFile = tempDir + "/mcp_frame_" + (new Date()).getTime() + ".png";
+        var tempFile = savePath || (tempDir + "/mcp_frame_" + (new Date()).getTime() + ".png");
 
         var pos = seq.getPlayerPosition();
         if (!pos) return _err("Could not read playhead position for frame capture.");
@@ -1241,12 +1244,23 @@ function captureFrameAsBase64(argsJson) {
 
         var base64 = _binaryToBase64(binary);
 
-        // Clean up temp file
-        try { file.remove(); } catch (e2) {}
+        // Clean up the temp file unless the caller asked to keep it.
+        var keptPath = "";
+        if (savePath) {
+            keptPath = parsedExport.data.outputPath;
+        } else {
+            try { file.remove(); } catch (e2) {}
+        }
+
+        // exportFrame reports the REAL container it produced -- the built-in
+        // fallback preset emits Targa, and labeling that "png" sent
+        // undecodable images to callers.
+        var actualFormat = (parsedExport.data.format || "PNG").toLowerCase();
 
         return _ok({
             image_base64: base64,
-            format: "png",
+            format: actualFormat,
+            saved_path: keptPath,
             width: seq.frameSizeHorizontal,
             height: seq.frameSizeVertical,
             timecode: pos.seconds

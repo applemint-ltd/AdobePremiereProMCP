@@ -107,7 +107,13 @@ const PONG_TIMEOUT_MS = 5_000;
 // command timeout with no file ever getting written. These functions get a
 // much longer timeout instead.
 const LONG_RUNNING_COMMAND_TIMEOUT_MS = 600_000;
-const LONG_RUNNING_EVAL_FUNCTIONS = new Set(["exportDirect", "exportViaAME"]);
+// exportSequence itself only queues in AME, but a cold AME launch plus
+// preset resolution (_waitForExporters polls up to 10s) can exceed 30s.
+const LONG_RUNNING_EVAL_FUNCTIONS = new Set([
+  "exportDirect",
+  "exportViaAME",
+  "exportSequence",
+]);
 // Queues into AME rather than blocking on the render, but still needs to
 // wait for AME to launch and a preset to resolve -- longer than default.
 const EXPORT_SEQUENCE_TIMEOUT_MS = 120_000;

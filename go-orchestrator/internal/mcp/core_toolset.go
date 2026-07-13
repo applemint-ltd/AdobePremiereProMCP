@@ -125,6 +125,9 @@ var coreTools = []string{
 	"premiere_get_export_progress", "premiere_get_render_queue_status",
 	"premiere_export_audio_only",
 
+	// Remote review loop
+	"premiere_export_preview", "premiere_generate_contact_sheet", "premiere_post_file_to_slack",
+
 	// Assembly / pipeline (the golden path). The legacy assemble_from_* trio
 	// and create_slideshow stay in the long tail: they silently drop
 	// transitions/in-out points; the storyboard assembler replaces them.
@@ -153,8 +156,10 @@ var brokenTools = []string{
 	"premiere_tag_clips", "premiere_export_edl_file", "premiere_import_omf",
 	"premiere_list_export_presets_disk", "premiere_select_all", "premiere_get_sequence_statistics",
 
-	// seq.exportFramePNG removed in 2026 -> these silently produce nothing
-	"premiere_generate_storyboard", "premiere_generate_contact_sheet",
+	// seq.exportFramePNG removed in 2026 -> these silently produce nothing.
+	// (premiere_generate_contact_sheet was in this class but is re-implemented
+	// Go-side over ffmpeg in review_tools.go, replacing the broken handler.)
+	"premiere_generate_storyboard",
 	"premiere_generate_clip_thumbnail", "premiere_generate_sequence_thumbnail",
 	"premiere_create_thumbnail_from_frame",
 

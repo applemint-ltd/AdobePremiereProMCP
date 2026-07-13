@@ -811,6 +811,8 @@ function _resolvePresetPath(preset, encoder) {
     var PRESET_HINTS = {
         h264_1080p:  { exporter: "h.264", preset: "match source - high bitrate" },
         h264_4k:     { exporter: "h.264", preset: "match source - high bitrate" },
+        // Low-bitrate preview for the remote review loop (Slack uploads).
+        h264_preview: { exporter: "h.264", preset: "match source - adaptive low bitrate" },
         prores_422:  { exporter: "quicktime", preset: "apple prores 422" },
         prores_4444: { exporter: "quicktime", preset: "apple prores 4444" },
         dnxhd:       { exporter: "mxf", preset: "dnxhd" },
