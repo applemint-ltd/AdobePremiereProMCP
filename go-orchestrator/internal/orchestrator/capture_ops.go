@@ -1,13 +1,14 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/png"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -21,118 +22,64 @@ import (
 const captureCallTimeout = 3 * time.Minute
 
 // CaptureFrameAsBase64 captures the current frame at the playhead position
-// and returns it as a base64-encoded image.
+// and returns it as a base64-encoded PNG.
 //
-// The host's exportFrame QUEUES a one-frame render in Adobe Media Encoder
-// and returns immediately — on Premiere 2026 the old synchronous
-// exportAsMediaDirect path reports "No Error" without ever writing a file,
-// and polling inside ExtendScript blocks the engine the render needs. So
-// the file wait and the base64 encoding both happen here, engine-free.
+// Premiere 2026 has NO working single-still export via scripting:
+// exportAsMediaDirect reports "No Error" but writes nothing, and
+// encodeSequence with a PNG/still-sequence preset returns a job id but AME
+// never produces a file (both verified live). The only render path that
+// works is H.264 via AME. So this exports a preview through the proven
+// export path and pulls the requested frame out of it with the media
+// engine's ffmpeg thumbnailer — the same extractor premiere_generate_
+// contact_sheet uses. Heavier than a native still (it renders the sequence
+// once), but reliable, which is the whole point of "show me the frame".
 func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, captureCallTimeout)
 	defer cancel()
 
-	outPath := filepath.Join(os.TempDir(), fmt.Sprintf("mcp_frame_%d.png", time.Now().UnixNano()))
-	argsJSON, _ := json.Marshal(map[string]any{"outputPath": outPath, "format": "PNG"})
-	raw, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
+	// Where is the playhead? Best-effort; default to the start.
+	atSeconds := 0.0
+	if ph, err := e.GetPlayheadPosition(ctx); err == nil {
+		atSeconds = ph.Seconds
+	}
+
+	previewName := fmt.Sprintf("frame_capture_%d.mp4", time.Now().UnixNano())
+	preview, err := e.ExportPreview(ctx, previewName)
 	if err != nil {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: %w", err)
+		return nil, fmt.Errorf("CaptureFrameAsBase64: could not render a preview to grab the frame from: %w", err)
+	}
+	if preview.Status != "completed" || preview.OutputPath == "" {
+		return nil, fmt.Errorf("CaptureFrameAsBase64: preview render did not complete (%s); Adobe Media Encoder may still be starting", preview.Status)
+	}
+	defer os.Remove(preview.OutputPath)
+
+	// Clamp the timestamp inside the rendered file's duration.
+	if asset, perr := e.media.ProbeMedia(ctx, preview.OutputPath); perr == nil && asset != nil && asset.Video != nil {
+		dur := asset.Video.DurationSeconds
+		if dur > 0 && atSeconds > dur-0.05 {
+			atSeconds = dur / 2
+		}
 	}
 
-	var data struct {
-		OutputPath string  `json:"output_path"`
-		Format     string  `json:"format"`
-		Width      int     `json:"width"`
-		Height     int     `json:"height"`
-		Time       float64 `json:"time_seconds"`
-	}
-	if err := json.Unmarshal([]byte(raw), &data); err != nil {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: failed to parse response: %w", err)
-	}
-
-	finalPath, err := awaitFrameFile(ctx, outPath)
+	png, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, 0, 0, "png")
 	if err != nil {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: %w", err)
+		return nil, fmt.Errorf("CaptureFrameAsBase64: could not extract the frame: %w", err)
 	}
-	defer os.Remove(finalPath)
-
-	bytes, err := os.ReadFile(finalPath)
-	if err != nil {
-		return nil, fmt.Errorf("CaptureFrameAsBase64: read rendered frame: %w", err)
+	if len(png) == 0 {
+		return nil, fmt.Errorf("CaptureFrameAsBase64: frame extraction returned no image data")
 	}
 
-	format := strings.ToLower(data.Format)
-	if format == "" {
-		format = "png"
+	res := &FrameCaptureResult{
+		ImageBase64: base64.StdEncoding.EncodeToString(png),
+		Format:      "png",
+		Timecode:    atSeconds,
 	}
-	return &FrameCaptureResult{
-		ImageBase64: base64.StdEncoding.EncodeToString(bytes),
-		Format:      format,
-		Width:       data.Width,
-		Height:      data.Height,
-		Timecode:    data.Time,
-	}, nil
+	if cfg, _, derr := image.DecodeConfig(bytes.NewReader(png)); derr == nil {
+		res.Width, res.Height = cfg.Width, cfg.Height
+	}
+	return res, nil
 }
 
-// awaitFrameFile polls (bounded by ctx) until the queued single-frame
-// render lands on disk with a stable size. Still-sequence presets may add a
-// numeric suffix before the extension ("frame.png" -> "frame00000.png"), so
-// sibling variants are matched too.
-func awaitFrameFile(ctx context.Context, outPath string) (string, error) {
-	ext := filepath.Ext(outPath)
-	base := strings.TrimSuffix(filepath.Base(outPath), ext)
-	dir := filepath.Dir(outPath)
-
-	find := func() string {
-		if info, err := os.Stat(outPath); err == nil && info.Size() > 0 {
-			return outPath
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return ""
-		}
-		for _, e := range entries {
-			name := e.Name()
-			if !strings.HasPrefix(name, base) || !strings.HasSuffix(name, ext) {
-				continue
-			}
-			mid := strings.TrimSuffix(strings.TrimPrefix(name, base), ext)
-			isNum := mid != ""
-			for _, r := range mid {
-				if r < '0' || r > '9' {
-					isNum = false
-					break
-				}
-			}
-			if isNum {
-				return filepath.Join(dir, name)
-			}
-		}
-		return ""
-	}
-
-	var lastSize int64 = -1
-	var lastPath string
-	for {
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("frame render did not finish in time (Adobe Media Encoder may still be starting); the job stays queued")
-		case <-time.After(500 * time.Millisecond):
-		}
-		p := find()
-		if p == "" {
-			continue
-		}
-		info, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		if p == lastPath && info.Size() > 0 && info.Size() == lastSize {
-			return p, nil
-		}
-		lastPath, lastSize = p, info.Size()
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Secure ExtendScript Execution Operations

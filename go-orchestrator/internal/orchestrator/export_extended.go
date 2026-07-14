@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -72,29 +74,43 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	if params.OutputPath == "" {
 		return nil, fmt.Errorf("export frame: output_path must not be empty")
 	}
-	argsJSON, _ := json.Marshal(map[string]any{
-		"params": params,
-	})
-	// Single-frame renders can take minutes cold on heavy sequences. The
-	// host queues the render in AME; the file wait happens here.
+	// Premiere 2026 has no working scripted single-still export (see
+	// CaptureFrameAsBase64). Render a preview via the working H.264 path and
+	// extract the playhead frame with the media engine's ffmpeg thumbnailer,
+	// writing it to the caller's requested path.
 	ctx, cancel := context.WithTimeout(ctx, captureCallTimeout)
 	defer cancel()
-	result, err := e.premiere.EvalCommand(ctx, "exportFrame", string(argsJSON))
+
+	atSeconds := 0.0
+	if ph, err := e.GetPlayheadPosition(ctx); err == nil {
+		atSeconds = ph.Seconds
+	}
+	preview, err := e.ExportPreview(ctx, fmt.Sprintf("export_frame_%d.mp4", time.Now().UnixNano()))
 	if err != nil {
-		return nil, fmt.Errorf("ExportFrame: %w", err)
+		return nil, fmt.Errorf("ExportFrame: could not render a preview to grab the frame from: %w", err)
 	}
-	var data struct {
-		OutputPath string `json:"output_path"`
+	if preview.Status != "completed" || preview.OutputPath == "" {
+		return nil, fmt.Errorf("ExportFrame: preview render did not complete (%s)", preview.Status)
 	}
-	_ = json.Unmarshal([]byte(result), &data)
-	if data.OutputPath != "" {
-		finalPath, err := awaitFrameFile(ctx, data.OutputPath)
-		if err != nil {
-			return nil, fmt.Errorf("ExportFrame: %w", err)
+	defer os.Remove(preview.OutputPath)
+
+	if asset, perr := e.media.ProbeMedia(ctx, preview.OutputPath); perr == nil && asset != nil && asset.Video != nil {
+		if d := asset.Video.DurationSeconds; d > 0 && atSeconds > d-0.05 {
+			atSeconds = d / 2
 		}
-		return &GenericExportResult{Status: "success", OutputPath: finalPath}, nil
 	}
-	return &GenericExportResult{Status: "success", OutputPath: result}, nil
+	format := strings.ToLower(params.Format)
+	if format != "jpeg" && format != "jpg" {
+		format = "png"
+	}
+	img, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, 0, 0, format)
+	if err != nil {
+		return nil, fmt.Errorf("ExportFrame: could not extract the frame: %w", err)
+	}
+	if err := os.WriteFile(params.OutputPath, img, 0o644); err != nil {
+		return nil, fmt.Errorf("ExportFrame: could not write %s: %w", params.OutputPath, err)
+	}
+	return &GenericExportResult{Status: "success", OutputPath: params.OutputPath}, nil
 }
 
 // ExportAAF exports a sequence as an AAF file.
