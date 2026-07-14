@@ -93,4 +93,45 @@ Watch:
 
 ---
 
-_Commits from this session, oldest first: export hardening → UXP matrix → audit spine → timeline diff/digest tools → honest errors/health → curation + drift guard → storyboard pipeline → review loop + Slack → docs → typed-path envelope fix → sequence-seeding fix → JSON polyfill/ticks/preset/capture fixes → AME-queue frame render. Golden path verified 16/16 live on Premiere 26.3._
+## 10. Post-verification round (clean reload + AME hardening)
+
+After the first golden pass, a clean panel-reload verification (task #9) and
+the AME work (#14) surfaced more live-only bugs — reinforcing §5's lesson
+that nothing substitutes for driving the real app:
+
+- **No working scripted single-still export on 2026.** `exportAsMediaDirect`
+  returns "No Error" and writes nothing; `encodeSequence` with a
+  still/PNG-sequence preset returns a job id but AME produces no file
+  (confirmed both work-area modes, warm AME). Only H.264 renders.
+  `capture_frame`/`export_frame` were rerouted through the proven H.264
+  preview + ffmpeg-thumbnail path (the same extractor as the contact sheet).
+- **The ffmpeg thumbnailer needs concrete WxH** — `0x0` (meant as "native")
+  made it fail; pass the preview's real resolution.
+- **`getExporters` returns classID/fileType as numeric fourcc codes**, not
+  strings — strict string unmarshalling broke `GetExporters` whenever
+  exporters existed. Preview never hit it (it calls `exportSequence`
+  directly); the warm-up path did. Fixed with a number-or-string
+  `FlexString`.
+- **Cold-AME start** is the real production edge: the session's first render
+  ate the 1-2 min launch and could false-timeout. Fix: `EnsureEncoderReady`
+  (launch + poll `getExporters` until ready, bounded, SEPARATE from the
+  render timeout, cached once per process) called before the render clock
+  starts; a `premiere_warm_encoder` tool + a bot system-prompt line to warm
+  once early. Notable real-world mitigation discovered while testing: with
+  Premiere open, Dynamic Link keeps AME alive, so cold-start is mostly a
+  first-launch-of-day concern.
+
+Two process notes that paid off again:
+- **The smoke test is now in-repo** (`scripts/smoke/golden_path_smoke.py`),
+  self-contained (synthesizes its own clips), asserts ground truth, cleans
+  up. Re-run after any pipeline/jsx/bridge change. It caught the harness-vs-
+  product distinction cleanly (a `.message`-wrapper parse bug in the harness
+  was NOT a product bug).
+- **Hot-patching from committed source** let me iterate jsx fixes without a
+  human reload each time, but the *authoritative* verification was a clean
+  reload loading the committed files from disk — do that before declaring
+  jsx work done.
+
+---
+
+_Commits, oldest first: export hardening → UXP matrix → audit spine → timeline diff/digest → honest errors/health → curation + drift guard → storyboard pipeline → review loop + Slack → docs → typed-path envelope fix → sequence-seeding fix → JSON polyfill/ticks/preset/capture fixes → AME-queue frame render → clean-reload verification → frame reroute + thumbnail dims → in-repo smoke test → AME warm-up + FlexString. Golden path verified 16/16 (and the self-contained smoke test 15/15) live on Premiere 26.3._
