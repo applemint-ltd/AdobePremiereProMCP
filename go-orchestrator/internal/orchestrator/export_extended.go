@@ -94,7 +94,12 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	}
 	defer os.Remove(preview.OutputPath)
 
+	width, height := 1280, 720
 	if asset, perr := e.media.ProbeMedia(ctx, preview.OutputPath); perr == nil && asset != nil && asset.Video != nil {
+		if asset.Video.Resolution.Width > 0 && asset.Video.Resolution.Height > 0 {
+			width = int(asset.Video.Resolution.Width)
+			height = int(asset.Video.Resolution.Height)
+		}
 		if d := asset.Video.DurationSeconds; d > 0 && atSeconds > d-0.05 {
 			atSeconds = d / 2
 		}
@@ -103,7 +108,7 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	if format != "jpeg" && format != "jpg" {
 		format = "png"
 	}
-	img, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, 0, 0, format)
+	img, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, width, height, format)
 	if err != nil {
 		return nil, fmt.Errorf("ExportFrame: could not extract the frame: %w", err)
 	}

@@ -53,15 +53,21 @@ func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult,
 	}
 	defer os.Remove(preview.OutputPath)
 
-	// Clamp the timestamp inside the rendered file's duration.
+	// Extract at the preview's native size; the ffmpeg thumbnailer needs a
+	// concrete WxH (0x0 makes it fail). Clamp the timestamp inside the
+	// rendered file's duration.
+	width, height := 1280, 720
 	if asset, perr := e.media.ProbeMedia(ctx, preview.OutputPath); perr == nil && asset != nil && asset.Video != nil {
-		dur := asset.Video.DurationSeconds
-		if dur > 0 && atSeconds > dur-0.05 {
+		if asset.Video.Resolution.Width > 0 && asset.Video.Resolution.Height > 0 {
+			width = int(asset.Video.Resolution.Width)
+			height = int(asset.Video.Resolution.Height)
+		}
+		if dur := asset.Video.DurationSeconds; dur > 0 && atSeconds > dur-0.05 {
 			atSeconds = dur / 2
 		}
 	}
 
-	png, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, 0, 0, "png")
+	png, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, width, height, "png")
 	if err != nil {
 		return nil, fmt.Errorf("CaptureFrameAsBase64: could not extract the frame: %w", err)
 	}
