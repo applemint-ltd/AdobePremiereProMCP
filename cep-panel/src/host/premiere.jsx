@@ -221,6 +221,30 @@ function getProjectState() {
 // ---------------------------------------------------------------------------
 // createSequence(paramsJson) - Create a new sequence
 // ---------------------------------------------------------------------------
+// _defaultSequencePreset(fps) resolves a bundled HD 1080p .sqpreset matching
+// the requested frame rate, so createSequence can create a sequence WITHOUT
+// popping the modal "New Sequence" settings dialog that
+// createNewSequence(name, "") triggers — that dialog blocks the entire
+// single-threaded ExtendScript engine until someone clicks it at the hub.
+function _defaultSequencePreset(fps) {
+    var base = app.path + "Contents/Settings/SequencePresets/HD 1080p/";
+    var f = parseFloat(fps) || 29.97;
+    var file;
+    if (f <= 24) file = "HD 1080p 23.976 fps.sqpreset";
+    else if (f <= 25) file = "HD 1080p 25 fps.sqpreset";
+    else if (f <= 30) file = "HD 1080p 29.97 fps.sqpreset";
+    else if (f <= 50) file = "HD 1080p 50 fps.sqpreset";
+    else file = "HD 1080p 59.94 fps.sqpreset";
+    var candidates = [base + file, base + "HD 1080p 29.97 fps.sqpreset"];
+    for (var i = 0; i < candidates.length; i++) {
+        if (File(candidates[i]).exists) return candidates[i];
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// createSequence(paramsJson) - Create a new sequence
+// ---------------------------------------------------------------------------
 function createSequence(paramsJson) {
     try {
         var params = JSON.parse(paramsJson);
@@ -233,38 +257,50 @@ function createSequence(paramsJson) {
             return _err("No project is open");
         }
 
-        // createNewSequence requires BOTH arguments on Premiere 2026 -- the
-        // one-arg call silently created nothing (verified live); the second
-        // arg is a placeholder ID string. Its return value on 2026 is the
-        // whole Sequence DOM object (NOT an id string) -- never serialize
-        // it, or the response explodes into a non-JSON blob.
-        var created = app.project.createNewSequence(name, "");
+        // Preferred, dialog-free path: create from a bundled preset via the
+        // QE DOM (qe.project.newSequence), the same mechanism as
+        // createSequenceFromPreset. createNewSequence(name, "") pops a modal
+        // that freezes the whole engine, so it's only a last resort.
+        var preset = _defaultSequencePreset(fps);
+        var madeViaPreset = false;
+        if (preset) {
+            try {
+                if (typeof qe === "undefined" || !qe.project) { app.enableQE(); }
+                if (typeof qe !== "undefined" && qe.project) {
+                    qe.project.newSequence(name, preset);
+                    madeViaPreset = true;
+                }
+            } catch (qerr) { madeViaPreset = false; }
+        }
+        if (!madeViaPreset) {
+            // No preset resolved and no QE — fall back to the DOM call. This
+            // MAY pop the settings dialog; it's the documented hazard, hit
+            // only when the bundled presets are missing.
+            app.project.createNewSequence(name, "");
+        }
 
         var seq = app.project.activeSequence;
-        if (created && seq) {
-            // Setting frame size may require sequence presets in newer versions
-            // These settings work through sequence settings dialog in practice,
-            // but we attempt to set them programmatically
+        if (!seq) {
+            return _err("createSequence did not create/activate a sequence");
+        }
+        // Best-effort resize for non-1080 requests (the preset is 1080p).
+        if (width !== 1920 || height !== 1080) {
             try {
                 seq.frameSizeHorizontal = width;
                 seq.frameSizeVertical = height;
-            } catch (dimErr) {
-                // Frame dimensions may not be directly settable in all versions
-            }
-
-            return _ok({
-                name: seq.name || name,
-                sequenceID: seq.sequenceID || "",
-                width: width,
-                height: height,
-                fps: fps,
-                videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
-                audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
-                timebase: seq.timebase || ""
-            });
-        } else {
-            return _err("createNewSequence did not create/activate a sequence");
+            } catch (dimErr) {}
         }
+        return _ok({
+            name: seq.name || name,
+            sequenceID: seq.sequenceID || "",
+            width: width,
+            height: height,
+            fps: fps,
+            createdVia: madeViaPreset ? "preset" : "dialog_fallback",
+            videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
+            audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
+            timebase: seq.timebase || ""
+        });
     } catch (e) {
         return _err("createSequence failed: " + e.message);
     }
