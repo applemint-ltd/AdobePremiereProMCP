@@ -80,3 +80,6 @@ TODO.md
 
 # Runtime logs and audit trail
 scripts/logs/
+
+# Smoke-test synthesized media
+scripts/smoke/.media/
