@@ -40,6 +40,14 @@ func (e *Engine) ExportPreview(ctx context.Context, outputName string) (*ExportP
 	}
 	outputPath := filepath.Join(e.projectSubDir(ctx, "Previews"), outputName)
 
+	// Make sure AME is up BEFORE the render's own clock starts, so a cold
+	// launch (1-2 min) doesn't get charged against the render timeout and
+	// reported as a false "queued_not_confirmed". Non-fatal: if warm-up
+	// errors we still try the export.
+	if err := e.EnsureEncoderReady(ctx, false); err != nil {
+		e.logger.Warn("encoder warm-up before preview failed; trying anyway", zap.Error(err))
+	}
+
 	// Same host export path as premiere_export; AME queues the render, so
 	// give the call and the file-wait a long leash.
 	ctx, cancel := context.WithTimeout(ctx, exportCallTimeout)

@@ -16,10 +16,11 @@ import (
 // Frame Capture Operations
 // ---------------------------------------------------------------------------
 
-// captureCallTimeout allows for a real single-frame render: the in-process
-// encoder can take ~90s cold on a heavy sequence, well past the default 30s
-// bridge deadline.
-const captureCallTimeout = 3 * time.Minute
+// captureCallTimeout is a generous ceiling (not a fixed wait): a frame
+// capture now renders a preview via AME, which on a cold Media Encoder can
+// spend a couple of minutes launching before the render even starts. Warm
+// calls still return in seconds.
+const captureCallTimeout = 8 * time.Minute
 
 // CaptureFrameAsBase64 captures the current frame at the playhead position
 // and returns it as a base64-encoded PNG.

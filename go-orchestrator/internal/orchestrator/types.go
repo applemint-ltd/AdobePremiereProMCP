@@ -4,7 +4,11 @@
 // assembles results into coherent responses.
 package orchestrator
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 // ---------------------------------------------------------------------------
 // Media / Asset types  (mirrors common.proto + media.proto)
@@ -504,10 +508,32 @@ type RenderPreviewParams struct {
 
 // ExporterInfo describes a single available exporter.
 type ExporterInfo struct {
-	Index    int    `json:"index"`
-	Name     string `json:"name"`
-	ClassID  string `json:"class_id"`
-	FileType string `json:"file_type"`
+	Index    int        `json:"index"`
+	Name     string     `json:"name"`
+	ClassID  FlexString `json:"class_id"`
+	FileType FlexString `json:"file_type"`
+}
+
+// FlexString unmarshals a JSON value that may be a string OR a number into a
+// string. Premiere 2026's getExporters returns classID/fileType as numeric
+// fourcc codes, not strings, which broke strict string unmarshalling.
+type FlexString string
+
+func (f *FlexString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		*f = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*f = FlexString(s)
+		return nil
+	}
+	*f = FlexString(strings.TrimSpace(string(b)))
+	return nil
 }
 
 // ExporterListResult is returned by getExporters.

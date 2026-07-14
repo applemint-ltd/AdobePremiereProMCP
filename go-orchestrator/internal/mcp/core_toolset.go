@@ -126,7 +126,7 @@ var coreTools = []string{
 	"premiere_export_audio_only",
 
 	// Remote review loop
-	"premiere_export_preview", "premiere_generate_contact_sheet", "premiere_post_file_to_slack",
+	"premiere_warm_encoder", "premiere_export_preview", "premiere_generate_contact_sheet", "premiere_post_file_to_slack",
 
 	// Assembly / pipeline (the golden path). The legacy assemble_from_* trio
 	// and create_slideshow stay in the long tail: they silently drop

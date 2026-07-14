@@ -513,6 +513,7 @@ type Orchestrator interface {
 	StoryboardFromScript(ctx context.Context, scriptText, scriptPath, scriptFormat, assetsDirectory string) (*storyboard.Storyboard, []string, error)
 
 	// --- Remote review loop ---
+	WarmEncoder(ctx context.Context) (*GenericResult, error)
 	ExportPreview(ctx context.Context, outputName string) (*ExportPreviewResult, error)
 	GenerateReviewContactSheet(ctx context.Context, videoPath string, cols, rows int) (*ContactSheetResult, error)
 	PostFileToSlack(ctx context.Context, filePath, channelID, threadTS, title, comment string) (*PostFileResult, error)

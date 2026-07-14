@@ -14,6 +14,19 @@ import (
 // gets both back into the user's thread.
 func registerReviewTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	s.AddTool(
+		gomcp.NewTool("premiere_warm_encoder",
+			gomcp.WithDescription("Bring Adobe Media Encoder up and confirm it can accept render jobs. Call this ONCE early in a session (before the user is waiting on a preview or export) — a cold AME can take 1-2 minutes to launch, and this pays that cost up front so the first real export/preview/frame-capture is fast. Returns quickly if AME is already warm."),
+		),
+		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+			res, err := orch.WarmEncoder(ctx)
+			if err != nil {
+				return gomcp.NewToolResultError(err.Error()), nil
+			}
+			return toolResultJSON(res)
+		},
+	)
+
+	s.AddTool(
 		gomcp.NewTool("premiere_export_preview",
 			gomcp.WithDescription("Export the active sequence as a low-bitrate MP4 into the project's Previews folder and wait (bounded) for the file to finish rendering. Status \"completed\" means the file exists with a stable size; \"queued_not_confirmed\" means the render may still be running in Adobe Media Encoder — never assume it finished. Pair with premiere_post_file_to_slack so a remote user can watch the cut."),
 			gomcp.WithString("output_name", gomcp.Description("File name for the preview (default: preview_<timestamp>.mp4)")),

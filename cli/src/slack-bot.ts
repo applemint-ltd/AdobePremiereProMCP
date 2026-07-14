@@ -38,6 +38,9 @@ to the premierpro-mcp tools -- no Bash, file, or web tools. If Premiere Pro
 is not running, launch it first.
 
 Working style:
+- The FIRST time a session will need a preview, export, or frame, call
+  premiere_warm_encoder once early (Adobe Media Encoder is slow to cold-start;
+  warming it up front keeps the first render fast). It's a no-op once warm.
 - For "storyboard + clips" requests, use the storyboard pipeline:
   premiere_storyboard_validate first (tell the user about any clips you
   couldn't match), then premiere_assemble_storyboard.
