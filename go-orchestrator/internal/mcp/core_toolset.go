@@ -62,7 +62,8 @@ var coreTools = []string{
 	"premiere_razor_clip", "premiere_razor_all_tracks",
 	"premiere_trim_clip_start", "premiere_trim_clip_end", "premiere_ripple_trim",
 	"premiere_roll_trim", "premiere_slip_clip", "premiere_slide_clip",
-	"premiere_set_clip_speed", "premiere_get_clip_speed", "premiere_reverse_clip",
+	"premiere_set_clip_speed", "premiere_get_clip_speed",
+	// reverse_clip demoted (long tail): fails "Illegal Parameter type" on 2026.
 	"premiere_freeze_frame", "premiere_set_clip_enabled", "premiere_set_clip_name",
 	"premiere_create_subclip", "premiere_get_all_clips", "premiere_get_clips_on_track",
 	"premiere_get_clip_info", "premiere_get_clip_at_time",
@@ -73,13 +74,18 @@ var coreTools = []string{
 	"premiere_add_audio_crossfade", "premiere_remove_transition", "premiere_set_transition_duration",
 	"premiere_get_available_transitions", "premiere_get_transitions",
 
-	// Audio
-	"premiere_set_audio_gain", "premiere_set_audio_level", "premiere_add_volume_keyframe",
+	// Audio (set_audio_gain demoted to long tail: plain imported project items
+	// don't expose setAudioGain on 2026 — use set_audio_track_volume /
+	// normalize_audio / set_audio_level for leveling instead)
+	"premiere_set_audio_level", "premiere_add_volume_keyframe",
 	"premiere_get_volume_keyframes", "premiere_remove_all_audio_keyframes",
 	"premiere_normalize_audio", "premiere_normalize_all_audio",
 	"premiere_fade_in", "premiere_fade_out",
 	"premiere_mute_audio_track", "premiere_unmute_all_audio_tracks", "premiere_solo_audio_track",
-	"premiere_set_audio_track_volume", "premiere_get_audio_level", "premiere_get_sequence_loudness",
+	// set_audio_track_volume demoted (long tail): the track Volume component
+	// isn't reachable via script on 2026 ("Could not find track volume
+	// parameter"). Per-clip leveling (set_audio_level / normalize_audio) works.
+	"premiere_get_audio_level", "premiere_get_sequence_loudness",
 	"premiere_add_music_bed", "premiere_duck_music_under_dialogue",
 
 	// Color (Lumetri basics)
@@ -89,8 +95,10 @@ var coreTools = []string{
 	"premiere_lumetri_set_saturation", "premiere_lumetri_set_temperature",
 	"premiere_lumetri_set_tint", "premiere_lumetri_set_vibrance",
 	"premiere_lumetri_apply_lut", "premiere_lumetri_remove_lut",
-	"premiere_lumetri_reset", "premiere_lumetri_auto_color", "premiere_lumetri_get_all",
+	"premiere_lumetri_reset", "premiere_lumetri_auto_color",
 	"premiere_apply_lut_to_all_clips", "premiere_reset_color_on_all_clips",
+	// lumetri_get_all demoted (long tail): its LUTAsset/LookAsset values carry
+	// a control char that breaks JSON re-parse in transit on 2026.
 
 	// Transform / basic effects
 	"premiere_set_opacity", "premiere_set_position", "premiere_set_scale", "premiere_set_rotation",
@@ -109,7 +117,8 @@ var coreTools = []string{
 	// not render on 2026)
 	"premiere_add_text_layer",
 	"premiere_add_subtitles_from_srt", "premiere_create_caption_track",
-	"premiere_import_captions", "premiere_export_captions", "premiere_get_captions",
+	"premiere_import_captions", "premiere_export_captions",
+	// get_captions demoted (long tail): 2026 exposes no scripted caption read.
 	"premiere_edit_caption", "premiere_delete_caption",
 	"premiere_adjust_subtitle_timing", "premiere_set_caption_position",
 

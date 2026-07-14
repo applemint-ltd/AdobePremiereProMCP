@@ -31,7 +31,7 @@ func (e *Engine) LumetriSetExposure2(ctx context.Context, trackIndex, clipIndex 
 		"clipIndex": clipIndex,
 		"value": value,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "lumetriSetExposure2", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "lumetriSetExposure", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("LumetriSetExposure2: %w", err)
 	}
@@ -45,7 +45,7 @@ func (e *Engine) LumetriSetContrast2(ctx context.Context, trackIndex, clipIndex 
 		"clipIndex": clipIndex,
 		"value": value,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "lumetriSetContrast2", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "lumetriSetContrast", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("LumetriSetContrast2: %w", err)
 	}
@@ -115,7 +115,7 @@ func (e *Engine) LumetriSetTemperature2(ctx context.Context, trackIndex, clipInd
 		"clipIndex": clipIndex,
 		"value": value,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTemperature2", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTemperature", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("LumetriSetTemperature2: %w", err)
 	}
@@ -129,7 +129,7 @@ func (e *Engine) LumetriSetTint2(ctx context.Context, trackIndex, clipIndex int,
 		"clipIndex": clipIndex,
 		"value": value,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTint2", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "lumetriSetTint", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("LumetriSetTint2: %w", err)
 	}
@@ -143,7 +143,7 @@ func (e *Engine) LumetriSetSaturation2(ctx context.Context, trackIndex, clipInde
 		"clipIndex": clipIndex,
 		"value": value,
 	})
-	result, err := e.premiere.EvalCommand(ctx, "lumetriSetSaturation2", string(argsJSON))
+	result, err := e.premiere.EvalCommand(ctx, "lumetriSetSaturation", string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("LumetriSetSaturation2: %w", err)
 	}

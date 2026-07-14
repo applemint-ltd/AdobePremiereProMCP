@@ -65,11 +65,6 @@ var knownMissingHostFns = map[string]string{
 	"getInstalledPlugins2":      "duplicate registration variant",
 	"getInstalledTransitions2":  "duplicate registration variant",
 	"getPerformanceReport2":     "duplicate registration variant",
-	"lumetriSetContrast2":       "duplicate registration variant",
-	"lumetriSetExposure2":       "duplicate registration variant",
-	"lumetriSetSaturation2":     "duplicate registration variant",
-	"lumetriSetTemperature2":    "duplicate registration variant",
-	"lumetriSetTint2":           "duplicate registration variant",
 }
 
 const hostDir = "../../../cep-panel/src/host"
