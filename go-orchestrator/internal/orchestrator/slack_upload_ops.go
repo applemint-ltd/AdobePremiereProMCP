@@ -12,11 +12,39 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // slackUploadMaxBytes caps uploads well under Slack's 1 GB limit — previews
 // and contact sheets should never be anywhere near this.
 const slackUploadMaxBytes = 512 << 20 // 512 MB
+
+// isAllowedUploadPath reports whether absPath sits under one of roots.
+// Both sides are NFC-normalized before comparison: macOS stores filenames
+// in NFD while host- or agent-supplied paths are typically NFC, and
+// filepath.Rel compares bytes — without normalization a project folder
+// with Japanese (or any decomposable) characters wrongly rejects its own
+// files. Symlinks are resolved best-effort so /var vs /private/var
+// spellings of the temp dir also match.
+func isAllowedUploadPath(absPath string, roots []string) bool {
+	canonical := func(p string) string {
+		if resolved, err := filepath.EvalSymlinks(p); err == nil {
+			p = resolved
+		}
+		return norm.NFC.String(p)
+	}
+	target := canonical(absPath)
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(canonical(root), target); err == nil && !strings.HasPrefix(rel, "..") {
+			return true
+		}
+	}
+	return false
+}
 
 // PostFileResult reports a completed Slack upload.
 type PostFileResult struct {
@@ -57,17 +85,7 @@ func (e *Engine) PostFileToSlack(ctx context.Context, filePath, channelID, threa
 	if projDir := e.projectSubDir(ctx, ""); projDir != "" {
 		allowedRoots = append(allowedRoots, projDir)
 	}
-	allowed := false
-	for _, root := range allowedRoots {
-		if root == "" {
-			continue
-		}
-		if rel, err := filepath.Rel(root, absPath); err == nil && !strings.HasPrefix(rel, "..") {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
+	if !isAllowedUploadPath(absPath, allowedRoots) {
 		return nil, fmt.Errorf("post_file_to_slack: %s is outside the project and temp directories — only files this pipeline produced can be uploaded", absPath)
 	}
 
