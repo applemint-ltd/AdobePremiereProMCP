@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `premiere_await_exports` / `premiere_export_status` — file-truth export
+  primitives: completion means the file exists, held a stable size, and (for
+  video) probes as readable; timeouts return honest partial state (FR-05)
+- `premiere_storyboard_expand_variants` — one base storyboard + per-variant
+  field overrides → N validated, name-stamped storyboards, with a
+  one-variable-per-experiment diff gate for A/B discipline (FR-03)
+- `premiere_batch_export_sequences` — batch export rebuilt Go-side over the
+  verified AME queue path with per-file file-truth completion (FR-04)
+- Docs: `docs/feature-requests-shorts-ab.md` (FR-01..FR-16 backlog) and
+  `docs/SHORTS_AB_TESTING_PLAYBOOK.md` (bulk 9:16 A/B workflow)
+
+### Fixed
+- `premiere_post_file_to_slack` no longer rejects files under NFD-normalized
+  (e.g. Japanese-named) project folders — the upload allowlist NFC-normalizes
+  both sides of the path comparison (FR-12)
+- `premiere_export` with no `sequence_id` now genuinely falls back to the
+  active sequence, as its schema always claimed (FR-04)
+
+### Removed
+- Dead host-side batch export paths (`batchExportSequences` /
+  `exportAllSequences` orchestrator methods and the `premiere_export_all_sequences`
+  tool): their `exportAsMediaDirect` call returns success but writes nothing
+  on Premiere 2026; batch-with-no-targets replaces export-all
+
 ## [0.1.0] - 2026-03-19
 
 ### Added
