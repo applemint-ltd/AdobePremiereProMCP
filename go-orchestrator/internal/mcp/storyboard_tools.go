@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -103,7 +105,83 @@ func registerStoryboardTools(s *server.MCPServer, orch Orchestrator, logger *zap
 		},
 	)
 
+	s.AddTool(
+		gomcp.NewTool("premiere_storyboard_expand_variants",
+			gomcp.WithDescription("Expand ONE base storyboard into N A/B variants without touching the timeline: each variant applies field overrides (e.g. a different hook line), gets a deterministic sequence name stamped ({experiment_id}-{variant_id}), and must pass validation. The one-variable gate diffs each variant against the base and rejects arms that change more than one field — the discipline that keeps experiment results attributable. Assemble each returned storyboard with premiere_assemble_storyboard."),
+			gomcp.WithString("storyboard_json", gomcp.Description("The BASE storyboard/v1 JSON document")),
+			gomcp.WithString("csv_path", gomcp.Description("Path to a shot-list CSV as the base (alternative to storyboard_json)")),
+			gomcp.WithString("experiment_id", gomcp.Required(), gomcp.Description("Experiment identifier, e.g. EXP014 — becomes part of every sequence name")),
+			gomcp.WithString("variants_json", gomcp.Required(), gomcp.Description(`JSON array of variants: [{"variant_id":"hookA","label":"question hook","overrides":{"scenes[0].shots[0].text[0].content":"Still doing this manually?"}}]. Override paths address fields as key.key[N].key; null deletes a field; array indexes must already exist.`)),
+			gomcp.WithString("naming_template", gomcp.Description("Sequence-name template; placeholders {experiment_id}, {variant_id}, {label}. Default \"{experiment_id}-{variant_id}\"")),
+			gomcp.WithBoolean("enforce_single_variable", gomcp.Description("Require each variant to differ from base in exactly one field path (default true)")),
+			gomcp.WithArray("allowed_extra_paths", gomcp.Description("Field paths exempt from the single-variable gate (sequence.name is always exempt)"), gomcp.WithStringItems()),
+			gomcp.WithBoolean("check_collisions", gomcp.Description("Check rendered sequence names against the open project's sequences (default true; skipped with a warning when no project is reachable)")),
+		),
+		func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
+			base, errResult := storyboardFromArgs(req)
+			if errResult != nil {
+				return errResult, nil
+			}
+			var variants []storyboard.VariantSpec
+			if err := json.Unmarshal([]byte(argString(req, "variants_json", "")), &variants); err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("variants_json is not a valid variant array: %v", err)), nil
+			}
+			extraPaths, _ := extractStringSlice(req, "allowed_extra_paths")
+
+			expanded, err := storyboard.ExpandVariants(storyboard.ExpandVariantsInput{
+				Base:                  base,
+				ExperimentID:          argString(req, "experiment_id", ""),
+				Variants:              variants,
+				NamingTemplate:        argString(req, "naming_template", ""),
+				EnforceSingleVariable: argBoolDefault(req, "enforce_single_variable", true),
+				AllowedExtraPaths:     extraPaths,
+			})
+			if err != nil {
+				return gomcp.NewToolResultError(err.Error()), nil
+			}
+
+			// Collision check against the open project is best-effort: the
+			// expansion itself is a pure transform and must work offline.
+			var warnings []string
+			if argBoolDefault(req, "check_collisions", true) {
+				if list, lerr := orch.GetSequenceList(ctx); lerr != nil {
+					warnings = append(warnings, fmt.Sprintf("could not check sequence-name collisions (no project reachable?): %v", lerr))
+				} else {
+					existing := map[string]bool{}
+					for _, entry := range list.Sequences {
+						existing[entry.Name] = true
+					}
+					var collisions []string
+					for _, v := range expanded {
+						if existing[v.SequenceName] {
+							collisions = append(collisions, v.SequenceName)
+						}
+					}
+					if len(collisions) > 0 {
+						return gomcp.NewToolResultError(fmt.Sprintf("sequence names already exist in the project: %s — delete those sequences, change the experiment_id, or rename", strings.Join(collisions, ", "))), nil
+					}
+				}
+			}
+
+			return toolResultJSON(map[string]any{
+				"experiment_id": argString(req, "experiment_id", ""),
+				"count":         len(expanded),
+				"variants":      expanded,
+				"warnings":      warnings,
+			})
+		},
+	)
+
 	logger.Debug("storyboard tools registered")
+}
+
+// argBoolDefault reads a boolean argument, defaulting when absent (argBool
+// cannot express default-true).
+func argBoolDefault(req gomcp.CallToolRequest, key string, def bool) bool {
+	if v, ok := req.GetArguments()[key].(bool); ok {
+		return v
+	}
+	return def
 }
 
 // storyboardFromArgs builds a storyboard from storyboard_json or csv_path.

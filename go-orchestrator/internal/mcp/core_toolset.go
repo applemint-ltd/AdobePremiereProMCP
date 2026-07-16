@@ -149,6 +149,7 @@ var coreTools = []string{
 	// and create_slideshow stay in the long tail: they silently drop
 	// transitions/in-out points; the storyboard assembler replaces them.
 	"premiere_assemble_storyboard", "premiere_storyboard_validate", "premiere_storyboard_schema",
+	"premiere_storyboard_expand_variants",
 	"premiere_auto_edit", "premiere_parse_script",
 
 	// State / audit / safety
