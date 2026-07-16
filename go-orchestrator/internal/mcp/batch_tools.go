@@ -7,6 +7,8 @@ import (
 	gomcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
+
+	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
 )
 
 // registerBatchTools registers all batch operations and automation MCP tools.
@@ -68,71 +70,40 @@ func registerBatchTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 	)
 
 	// -----------------------------------------------------------------------
-	// Batch Export (3-4)
+	// Batch Export (3) — Go rebuild with file-truth completion. The old
+	// host-side batchExportSequences/exportAllSequences called
+	// seq.exportAsMediaDirect, which returns success but writes nothing on
+	// Premiere 2026; export_all is now "call with no targets".
 	// -----------------------------------------------------------------------
 
 	// 3. premiere_batch_export_sequences
 	s.AddTool(
 		gomcp.NewTool("premiere_batch_export_sequences",
-			gomcp.WithDescription("Export multiple sequences by their indices using a specified preset."),
-			gomcp.WithArray("sequence_indices",
-				gomcp.Required(),
-				gomcp.Description("Array of zero-based sequence indices to export"),
-				gomcp.WithNumberItems(),
-			),
-			gomcp.WithString("output_dir",
-				gomcp.Required(),
-				gomcp.Description("Absolute path to the output directory"),
-			),
-			gomcp.WithString("preset_path",
-				gomcp.Required(),
-				gomcp.Description("Absolute path to the AME export preset (.epr)"),
-			),
+			gomcp.WithDescription("Export multiple sequences through the verified AME queue path with HONEST per-file completion: a file counts as done only when it exists on disk, held a stable size, and probed as readable — never on the encoder's self-report. Warms AME once up front (cold start is 1-2 min). Target by sequence_ids (preferred, from premiere_get_sequence_list), sequence_names, or neither to export every sequence. Output dimensions follow each sequence (Match Source presets). Items reporting timeout may still be rendering — re-check with premiere_await_exports."),
+			gomcp.WithArray("sequence_ids", gomcp.Description("Sequence IDs from premiere_get_sequence_list (stable handles; preferred)"), gomcp.WithStringItems()),
+			gomcp.WithArray("sequence_names", gomcp.Description("Sequence names, as an alternative to ids"), gomcp.WithStringItems()),
+			gomcp.WithString("output_dir", gomcp.Required(), gomcp.Description("Directory for the exported files (created if missing)")),
+			gomcp.WithString("preset", gomcp.Description("Semantic preset (default h264_1080p); resolved by the host against the AME system presets"), gomcp.Enum("h264_1080p", "h264_4k", "prores_422", "prores_4444", "dnxhd")),
+			gomcp.WithString("filename_template", gomcp.Description("Filename template; placeholders {sequence_name}, {sequence_id}, {index}. Default \"{sequence_name}.mp4\"")),
+			gomcp.WithBoolean("warm_encoder", gomcp.Description("Ensure AME is warm before queueing (default true)")),
+			gomcp.WithString("await", gomcp.Description("\"all\" (default): block until every file is confirmed or times out; \"none\": queue and return immediately"), gomcp.Enum("all", "none")),
+			gomcp.WithNumber("per_file_timeout_s", gomcp.Description("Await budget per queued file in seconds (default 600)")),
+			gomcp.WithBoolean("overwrite", gomcp.Description("Replace existing output files (default false: those items are skipped, so re-runs converge)")),
 		),
 		batchH(orch, logger, "batch_export_sequences", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-			outputDir := gomcp.ParseString(req, "output_dir", "")
-			if outputDir == "" {
-				return gomcp.NewToolResultError("parameter 'output_dir' is required"), nil
-			}
-			presetPath := gomcp.ParseString(req, "preset_path", "")
-			if presetPath == "" {
-				return gomcp.NewToolResultError("parameter 'preset_path' is required"), nil
-			}
-			indices, err := extractIntSlice(req, "sequence_indices")
-			if err != nil {
-				return gomcp.NewToolResultError(fmt.Sprintf("invalid sequence_indices: %v", err)), nil
-			}
-			result, err := orch.BatchExportSequences(ctx, indices, outputDir, presetPath)
-			if err != nil {
-				return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
-			}
-			return toolResultJSON(result)
-		}),
-	)
-
-	// 4. premiere_export_all_sequences
-	s.AddTool(
-		gomcp.NewTool("premiere_export_all_sequences",
-			gomcp.WithDescription("Export every sequence in the project using a specified preset."),
-			gomcp.WithString("output_dir",
-				gomcp.Required(),
-				gomcp.Description("Absolute path to the output directory"),
-			),
-			gomcp.WithString("preset_path",
-				gomcp.Required(),
-				gomcp.Description("Absolute path to the AME export preset (.epr)"),
-			),
-		),
-		batchH(orch, logger, "export_all_sequences", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-			outputDir := gomcp.ParseString(req, "output_dir", "")
-			if outputDir == "" {
-				return gomcp.NewToolResultError("parameter 'output_dir' is required"), nil
-			}
-			presetPath := gomcp.ParseString(req, "preset_path", "")
-			if presetPath == "" {
-				return gomcp.NewToolResultError("parameter 'preset_path' is required"), nil
-			}
-			result, err := orch.ExportAllSequences(ctx, outputDir, presetPath)
+			ids, _ := extractStringSlice(req, "sequence_ids")
+			names, _ := extractStringSlice(req, "sequence_names")
+			result, err := orch.BatchExportViaQueue(ctx, &orchestrator.BatchExportParams{
+				SequenceIDs:      ids,
+				SequenceNames:    names,
+				Preset:           gomcp.ParseString(req, "preset", "h264_1080p"),
+				OutputDir:        gomcp.ParseString(req, "output_dir", ""),
+				FilenameTemplate: gomcp.ParseString(req, "filename_template", ""),
+				WarmEncoder:      argBoolDefault(req, "warm_encoder", true),
+				Await:            gomcp.ParseString(req, "await", "all"),
+				PerFileTimeoutS:  gomcp.ParseFloat64(req, "per_file_timeout_s", 600),
+				Overwrite:        argBool(req, "overwrite"),
+			})
 			if err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("failed: %v", err)), nil
 			}

@@ -103,6 +103,8 @@ type mockPremiereClient struct {
 	// evalResults, when set, dispatches EvalCommand responses per host
 	// function name (falling back to evalResult/evalErr).
 	evalResults map[string]string
+	// evalCalls records every EvalCommand invocation in order.
+	evalCalls []evalCall
 	evalAudioResult  map[string]any
 	evalAudioErr     error
 	evalImmResult    map[string]any
@@ -154,7 +156,14 @@ func (m *mockPremiereClient) ExportSequence(_ context.Context, _ *ExportParams) 
 }
 
 
-func (m *mockPremiereClient) EvalCommand(_ context.Context, functionName string, _ string) (string, error) {
+// evalCall records one EvalCommand invocation for assertion.
+type evalCall struct {
+	Fn   string
+	Args string
+}
+
+func (m *mockPremiereClient) EvalCommand(_ context.Context, functionName string, argsJSON string) (string, error) {
+	m.evalCalls = append(m.evalCalls, evalCall{Fn: functionName, Args: argsJSON})
 	if m.evalResults != nil {
 		if res, ok := m.evalResults[functionName]; ok {
 			return res, nil

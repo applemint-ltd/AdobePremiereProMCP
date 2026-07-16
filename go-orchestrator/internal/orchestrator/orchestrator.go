@@ -351,7 +351,15 @@ func (e *Engine) Export(ctx context.Context, params *ExportParams) (*ExportResul
 		return nil, fmt.Errorf("export: params must not be nil — provide sequence_id, output_path, and preset")
 	}
 	if params.SequenceID == "" {
-		return nil, fmt.Errorf("export: sequence_id is required — use premiere_get_sequence_list to find available sequences, or create one with premiere_create_sequence")
+		// The tool schema promises an active-sequence fallback; honor it.
+		act, err := e.GetActiveSequence(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("export: no sequence_id given and no active sequence — use premiere_get_sequence_list or premiere_set_active_sequence: %w", err)
+		}
+		if act == nil || act.SequenceID == "" {
+			return nil, fmt.Errorf("export: no sequence_id given and the active sequence reports no id — pass sequence_id from premiere_get_sequence_list")
+		}
+		params.SequenceID = act.SequenceID
 	}
 	e.logger.Debug("export: starting",
 		zap.String("sequence_id", params.SequenceID),

@@ -141,6 +141,10 @@ var coreTools = []string{
 	// exposes no real queue state, so a stable readable file is the only
 	// honest completion signal.
 	"premiere_await_exports", "premiere_export_status",
+	// Batch export, rebuilt Go-side over the verified AME path with per-file
+	// file-truth completion (the old host batch tools called the dead-on-2026
+	// exportAsMediaDirect and were deleted).
+	"premiere_batch_export_sequences",
 
 	// Remote review loop
 	"premiere_warm_encoder", "premiere_export_preview", "premiere_generate_contact_sheet", "premiere_post_file_to_slack",

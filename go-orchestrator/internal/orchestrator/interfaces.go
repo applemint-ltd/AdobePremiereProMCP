@@ -594,8 +594,7 @@ type Orchestrator interface {
 	ImportImageSequence(ctx context.Context, folderPath string, fps float64, targetBin string) (*GenericResult, error)
 
 	// --- Batch Export ---
-	BatchExportSequences(ctx context.Context, sequenceIndices []int, outputDir, presetPath string) (*GenericResult, error)
-	ExportAllSequences(ctx context.Context, outputDir, presetPath string) (*GenericResult, error)
+	BatchExportViaQueue(ctx context.Context, params *BatchExportParams) (*BatchExportResult, error)
 
 	// --- Batch Effects ---
 	ApplyEffectToMultipleClips(ctx context.Context, trackType string, trackIndex int, clipIndices []int, effectName string) (*GenericResult, error)

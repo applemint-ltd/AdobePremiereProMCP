@@ -36,33 +36,11 @@ func (e *Engine) ImportImageSequence(ctx context.Context, folderPath string, fps
 }
 
 // ---------------------------------------------------------------------------
-// Batch Export
+// Batch Export lives in batch_export_ops.go (BatchExportViaQueue). The old
+// host-side batchExportSequences/exportAllSequences were deleted: their
+// seq.exportAsMediaDirect call returns success but writes nothing on
+// Premiere 2026 (verified live).
 // ---------------------------------------------------------------------------
-
-func (e *Engine) BatchExportSequences(ctx context.Context, sequenceIndices []int, outputDir, presetPath string) (*GenericResult, error) {
-	argsJSON, _ := json.Marshal(map[string]any{
-		"sequenceIndices": sequenceIndices,
-		"outputDir": outputDir,
-		"presetPath": presetPath,
-	})
-	result, err := e.premiere.EvalCommand(ctx, "batchExportSequences", string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("BatchExportSequences: %w", err)
-	}
-	return &GenericResult{Status: "success", Message: result}, nil
-}
-
-func (e *Engine) ExportAllSequences(ctx context.Context, outputDir, presetPath string) (*GenericResult, error) {
-	argsJSON, _ := json.Marshal(map[string]any{
-		"outputDir": outputDir,
-		"presetPath": presetPath,
-	})
-	result, err := e.premiere.EvalCommand(ctx, "exportAllSequences", string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("ExportAllSequences: %w", err)
-	}
-	return &GenericResult{Status: "success", Message: result}, nil
-}
 
 // ---------------------------------------------------------------------------
 // Batch Effects
