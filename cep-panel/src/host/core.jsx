@@ -1219,66 +1219,18 @@ function setRectifiedAudioWaveforms(argsJson) {
 
 // ── Frame Capture ─────────────────────────────────────────────────────
 
+// captureFrameAsBase64 (host) is obsolete on Premiere 2026 and no longer on
+// any tool path: frame rendering is now async (exportFrame queues an AME job
+// and returns before the file exists), and polling for the file here with
+// $.sleep would block the single-threaded ExtendScript engine that AME's
+// render depends on. The premiere_capture_frame_base64 MCP tool now renders a
+// preview via the media engine and extracts the frame with ffmpeg, entirely
+// Go-side. Return an honest error so a raw execute_extendscript caller isn't
+// misled by a stale "file not created" failure.
 function captureFrameAsBase64(argsJson) {
-    try {
-        var args = {};
-        if (argsJson && argsJson !== "") {
-            var parsed = _parseArgs(argsJson);
-            if (!parsed.error) args = parsed;
-        }
-        if (!app.project) return _err("No project is open.");
-        var seq = _getActiveSequence();
-        if (!seq) return _err("No active sequence.");
-
-        // savePath keeps the rendered frame on disk (e.g. to hand to
-        // premiere_post_file_to_slack) instead of deleting the temp file.
-        var savePath = args.savePath || args.save_path || "";
-        var tempDir = Folder.temp.fsName;
-        var tempFile = savePath || (tempDir + "/mcp_frame_" + (new Date()).getTime() + ".png");
-
-        var pos = seq.getPlayerPosition();
-        if (!pos) return _err("Could not read playhead position for frame capture.");
-
-        // qeSeq.exportFramePNG dumps a stale program-monitor cache and ignores
-        // the requested ticks (see exportFrame in premiere.jsx). Render fresh
-        // via the in-process encoder instead, same as the fixed exportFrame path.
-        var exportResult = exportFrame(JSON.stringify({ outputPath: tempFile, format: "PNG" }));
-        var parsedExport;
-        try { parsedExport = JSON.parse(exportResult); } catch (pe) { return _err("Failed to capture frame: could not parse export result."); }
-        if (!parsedExport.success) return _err("Failed to capture frame: " + parsedExport.error);
-
-        var file = new File(parsedExport.data.outputPath);
-        if (!file.exists) return _err("Failed to capture frame: exported PNG file not created.");
-
-        file.open("r");
-        file.encoding = "BINARY";
-        var binary = file.read();
-        file.close();
-
-        var base64 = _binaryToBase64(binary);
-
-        // Clean up the temp file unless the caller asked to keep it.
-        var keptPath = "";
-        if (savePath) {
-            keptPath = parsedExport.data.outputPath;
-        } else {
-            try { file.remove(); } catch (e2) {}
-        }
-
-        // exportFrame reports the REAL container it produced -- the built-in
-        // fallback preset emits Targa, and labeling that "png" sent
-        // undecodable images to callers.
-        var actualFormat = (parsedExport.data.format || "PNG").toLowerCase();
-
-        return _ok({
-            image_base64: base64,
-            format: actualFormat,
-            saved_path: keptPath,
-            width: seq.frameSizeHorizontal,
-            height: seq.frameSizeVertical,
-            timecode: pos.seconds
-        });
-    } catch (e) { return _err("Failed to capture frame: " + e.message); }
+    return _err("captureFrameAsBase64 (host) is not available on Premiere 2026 — " +
+        "synchronous still capture blocks the engine. Use the premiere_capture_frame_base64 " +
+        "MCP tool, which renders a preview and extracts the frame via the media engine.");
 }
 
 // Base64 encoder for binary data

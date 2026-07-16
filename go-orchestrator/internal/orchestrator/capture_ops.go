@@ -63,8 +63,14 @@ func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult,
 			width = int(asset.Video.Resolution.Width)
 			height = int(asset.Video.Resolution.Height)
 		}
+		// Clamp to just inside the rendered duration so ffmpeg can still
+		// grab a frame — the playhead sitting on the last frame is common
+		// right after a cut, and the user means THAT frame, not the middle.
 		if dur := asset.Video.DurationSeconds; dur > 0 && atSeconds > dur-0.05 {
-			atSeconds = dur / 2
+			atSeconds = dur - 0.04
+			if atSeconds < 0 {
+				atSeconds = 0
+			}
 		}
 	}
 

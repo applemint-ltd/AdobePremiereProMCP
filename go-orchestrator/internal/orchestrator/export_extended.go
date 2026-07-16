@@ -100,8 +100,13 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 			width = int(asset.Video.Resolution.Width)
 			height = int(asset.Video.Resolution.Height)
 		}
+		// Clamp to just inside the duration (not the middle) so an
+		// end-of-sequence playhead still yields the frame the user meant.
 		if d := asset.Video.DurationSeconds; d > 0 && atSeconds > d-0.05 {
-			atSeconds = d / 2
+			atSeconds = d - 0.04
+			if atSeconds < 0 {
+				atSeconds = 0
+			}
 		}
 	}
 	format := strings.ToLower(params.Format)

@@ -123,7 +123,11 @@ var coreTools = []string{
 	"premiere_adjust_subtitle_timing", "premiere_set_caption_position",
 
 	// Preview / analysis
-	"premiere_capture_frame_base64", "premiere_export_frame", "premiere_batch_export_frames",
+	"premiere_capture_frame_base64", "premiere_export_frame",
+	// batch_export_frames demoted (long tail): its host loop calls the now-
+	// async exportFrame and reports success before AME writes any file (and
+	// restores the playhead before the queued jobs render). Needs a Go-side
+	// reroute (one preview -> ffmpeg-extract N frames) before it's core again.
 	"premiere_detect_scene_changes", "premiere_get_scene_list",
 	"premiere_set_playhead_position", "premiere_get_playhead_position",
 	"premiere_get_current_timecode", "premiere_go_to_timecode",

@@ -83,3 +83,26 @@ func TestDiffMovedAndDisabled(t *testing.T) {
 		t.Fatalf("human: %s", joined)
 	}
 }
+
+// A clip that is both trimmed and moved (e.g. a ripple trim) must report BOTH
+// changes — the move was previously dropped by a trimmed-or-moved switch.
+func TestDiffTrimmedAndMoved(t *testing.T) {
+	// beach.mp4: start 6->8 (moved) and end 10->11 while start moves, so
+	// duration 4->3 (trimmed).
+	after := strings.ReplaceAll(snapBase,
+		`"start": 6, "end": 10, "duration": 4, "in_point": 0, "out_point": 4`,
+		`"start": 8, "end": 11, "duration": 3, "in_point": 1, "out_point": 4`)
+	d, err := Diff(snapBase, after)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	kinds := map[string]bool{}
+	for _, m := range d.Modified {
+		if m.ClipName == "beach.mp4" {
+			kinds[m.Kind] = true
+		}
+	}
+	if !kinds["trimmed"] || !kinds["moved"] {
+		t.Fatalf("want both trimmed and moved for beach.mp4, got %+v", d.Modified)
+	}
+}

@@ -181,13 +181,16 @@ func compareClip(d *TimelineDiff, trackType string, trackIndex int, b, a Clip) {
 		math.Abs(a.InPoint-b.InPoint) > timeEpsilon ||
 		math.Abs(a.OutPoint-b.OutPoint) > timeEpsilon
 
-	switch {
-	case trimmed:
+	// A clip can be both trimmed and moved (e.g. a ripple trim retimes and
+	// repositions it) — report each independently so the change summary never
+	// silently omits the move.
+	if trimmed {
 		c := base
 		c.Kind = "trimmed"
 		c.Detail = fmt.Sprintf("duration %s -> %s", fmtDur(b.Duration), fmtDur(a.Duration))
 		d.Modified = append(d.Modified, c)
-	case moved:
+	}
+	if moved {
 		c := base
 		c.Kind = "moved"
 		c.Detail = fmt.Sprintf("start %s -> %s", fmtTime(b.Start), fmtTime(a.Start))

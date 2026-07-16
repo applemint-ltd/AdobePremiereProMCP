@@ -273,10 +273,15 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 		}
 
 		if sp.TextOnly {
-			// A text card occupies video track 0 like any clip so timing
-			// stays continuous.
+			// A text-only card (e.g. an intro title) reserves time on the
+			// timeline but places its baked PNG on video track 1 (over black),
+			// NOT track 0. It must NOT increment trackClipCount: text overlays
+			// are added in a deferred phase after this loop, so counting a card
+			// here would push the positional track-0 index used to read
+			// back/trim/transition every following real clip off by one —
+			// making the next real clip fail verification and get clobbered.
 			for _, txt := range sp.Text {
-				texts = append(texts, pendingText{overlay: txt, start: pos, shotDur: sp.TargetDuration, track: 0})
+				texts = append(texts, pendingText{overlay: txt, start: pos, shotDur: sp.TargetDuration, track: 1})
 			}
 			if sp.Caption != "" {
 				cues = append(cues, captionCue{start: pos, end: pos + sp.TargetDuration, text: sp.Caption})
@@ -284,7 +289,6 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 			sr.Status = "text_card"
 			sr.DurationSeconds = sp.TargetDuration
 			report.Shots = append(report.Shots, sr)
-			trackClipCount++ // the rendered PNG becomes a clip on track 0
 			pos += sp.TargetDuration
 			continue
 		}
