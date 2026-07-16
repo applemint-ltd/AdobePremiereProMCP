@@ -44,13 +44,31 @@ A workflow-backed review (parallel finders per angle + independent per-location 
 
 Why did 16/16 golden + 22/22 core miss it? **The smoke fixtures never had a clip-less shot.** The golden CSV's first shot has a clip *and* text; a standalone title card was never exercised. Lesson: the smoke fixtures encode assumptions about input shape — the bugs live in the shapes you didn't fixture (title-only cards, end-of-sequence playhead, batch frames). The other six (near-end frame → middle-frame relocation, `batch_export_frames` reporting success with no files, dead-but-broken host `captureFrameAsBase64`, trimmed-*or*-moved diff dropping the move, `awaitExportedFile` false-positive on a mux pause) were the same theme: correct on the happy path, wrong on a shape the tests didn't cover. All fixed; the title-card fix verified live; a regression test added for the diff.
 
-## 6. State at end of v2
+## 6. This work through the lens of loops
+
+Reflecting on the session against Anthropic's ["Getting started with loops"](https://claude.com/blog/getting-started-with-loops) — loops being _"agents repeating cycles of work until a stop condition is met"_ — most of what made v2 work was loop-shaped, and its worst bugs were bad stop conditions.
+
+- **The core debugging cycle was a goal-based loop.** Fix → rebuild → run the smoke → read the audit log → fix again, with an explicit, measurable stop condition: **the smoke is all-green** (16/16 golden, 22/22 core). The clean-reload verification (#9) was exactly this loop and it earned its keep by _not_ stopping early — the first clean-load run was 15/16, so the loop kept going and each iteration surfaced the next 2026 API bug (§2). The audit trail was the loop's observation channel: I read failures out of `scripts/logs/audit/*.jsonl` rather than re-deriving them each turn.
+
+- **The smoke gates are the "encode verification so the agent self-validates" principle, made concrete.** `golden_path_smoke.py` and `core_tools_smoke.py` are the machine-checkable success criteria that let each loop iteration decide "done or keep going" without me eyeballing the timeline. They assert **ground truth** (read the timeline back, confirm files land) precisely so the stop condition can't be faked by a tool's self-report.
+
+- **Premature stopping was the actual failure mode — twice, literally.** The post's caution _"define explicit success criteria to prevent premature stopping"_ cut both ways here:
+  - `awaitExportedFile` was a loop whose stop condition ("size stable across one 2s repeat") fired mid-render on a mux pause → a truncated file reported as complete. The fix (#13, finding 7) hardened the stop condition to _three_ stable polls **plus** a `ProbeMedia` readable-stream check.
+  - The whole smoke suite passing was itself a stop condition that was satisfiable without full coverage — it had no clip-less title-card fixture, so the code review's text-card corruption bug slipped past a green loop (§5). Weak success criteria stop too soon; that's a loop failure, not just a test gap.
+
+- **Poll-until-condition loops live inside the product too**, each a small "repeat until stop," each deliberately bounded to avoid hanging or false stops: `EnsureEncoderReady` (poll `getExporters` until AME reports ready, 4-min bound, cached once-ready), `awaitFrameFile` / `awaitExportedFile` (poll disk until the render lands, ctx-bounded → honest `queued_not_confirmed` on timeout rather than a lie), and the ExtendScript `_waitForExporters`. The cold-AME warm-up (#14) is essentially moving one of these loops _earlier_ so the user isn't the one waiting on it.
+
+- **The bigger investigations were composed loops** — the "compose multiple primitives" idea. The explorations, the design pass, and the code review (#13) each ran as a background **workflow**: fan out finders/agents → independently verify each candidate → synthesize, i.e. a verify-loop wrapped around parallel worker-loops, with "verified findings, most-severe first" as the stop. The **drift guard in CI** is the proactive, automated end of the spectrum: a guard-loop that re-checks every EvalCommand target against the host on every PR so the `generateRoughCut` class of bug can't reappear.
+
+The meta-takeaway matches the post's "start simple; complexity serves necessity": the loops that paid off were the cheap ones (a smoke test as the stop condition), and the loops that bit were the ones with a **too-weak stop condition** — so most of v2's hardening was, in effect, tightening stop conditions until "green" actually meant "correct."
+
+## 7. State at end of v2
 
 - All planned workstreams + follow-ups (#9–#14) complete. Golden smoke 15/15, core smoke 22/22, `go test`/`vet` green.
 - ~25 commits ahead of `origin/main`, **unpushed** (never asked), no PR. Working tree clean.
 - **Two jsx fixes await a CEP panel reload to go live** (both hot-patch-verified against committed source, so the passing smokes can't have regressed from them): the dialog-free `create_sequence` (#12) and the honest-error host `captureFrameAsBase64` (#13). Reload + re-run both smokes to confirm from a clean load, as in #9.
 
-## 7. Open follow-ups (not blocking)
+## 8. Open follow-ups (not blocking)
 
 - `batch_export_frames` is demoted but its host loop still lies if exposed via `MCP_EXPOSE_ALL_TOOLS`; wants a Go-side reroute (one preview → ffmpeg-extract N frames), mirroring `capture_frame`.
 - `lumetri_get_all` demoted: its `LUTAsset`/`LookAsset` values carry a control char that breaks JSON re-parse in transit — needs escaping in the ES3 polyfill or the host getter if it's ever wanted back.
