@@ -62,6 +62,7 @@ func registerTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logger) {
 	registerCaptureTools(s, orch, logger)
 	registerStoryboardTools(s, orch, logger)
 	registerReviewTools(s, orch, logger)
+	registerExportWatchTools(s, orch, logger)
 }
 
 // ---------------------------------------------------------------------------

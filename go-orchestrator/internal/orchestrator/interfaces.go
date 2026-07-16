@@ -518,6 +518,10 @@ type Orchestrator interface {
 	GenerateReviewContactSheet(ctx context.Context, videoPath string, cols, rows int) (*ContactSheetResult, error)
 	PostFileToSlack(ctx context.Context, filePath, channelID, threadTS, title, comment string) (*PostFileResult, error)
 
+	// --- Export watching (file truth) ---
+	AwaitExports(ctx context.Context, paths []string, stableForS, timeoutS, pollIntervalS float64) (*AwaitExportsResult, error)
+	ExportStatus(ctx context.Context, paths []string) (*AwaitExportsResult, error)
+
 	// --- AI-Powered Smart Editing ---
 	SmartCut(ctx context.Context, params *SmartCutParams) (*SmartCutResult, error)
 	SmartTrim(ctx context.Context, params *SmartTrimParams) (*SmartTrimResult, error)

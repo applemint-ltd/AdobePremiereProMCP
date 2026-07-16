@@ -80,8 +80,7 @@ func (e *Engine) awaitExportedFile(ctx context.Context, path string, maxWait tim
 	const requiredStablePolls = 3 // ~6s of no growth before we even probe
 	start := time.Now()
 	deadline := start.Add(maxWait)
-	var lastSize int64 = -1
-	stable := 0
+	st := newFileWatchState(path)
 
 	for time.Now().Before(deadline) {
 		select {
@@ -93,28 +92,14 @@ func (e *Engine) awaitExportedFile(ctx context.Context, path string, maxWait tim
 			}
 		case <-time.After(2 * time.Second):
 		}
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if info.Size() > 0 && info.Size() == lastSize {
-			stable++
-		} else {
-			stable = 0
-		}
-		lastSize = info.Size()
-		if stable < requiredStablePolls {
-			continue
-		}
-		// Size has held steady; confirm it's a complete, readable file before
-		// declaring success (guards against a paused-mid-render truncation).
-		if asset, perr := e.media.ProbeMedia(ctx, path); perr != nil || asset == nil || asset.Video == nil || asset.Video.DurationSeconds <= 0 {
-			stable = 0 // not a finished video yet; keep waiting
-			continue
-		}
-		return &ExportPreviewResult{
-			Status: "completed", OutputPath: path,
-			SizeBytes: info.Size(), WaitedSecs: time.Since(start).Seconds(),
+		// The preview output is always a video file, so the probe gate is
+		// unconditional here (guards against a paused-mid-render truncation).
+		st.tick(ctx, requiredStablePolls, e.probeVideoOK, start)
+		if st.done {
+			return &ExportPreviewResult{
+				Status: "completed", OutputPath: path,
+				SizeBytes: st.lastSize, WaitedSecs: time.Since(start).Seconds(),
+			}
 		}
 	}
 	return &ExportPreviewResult{

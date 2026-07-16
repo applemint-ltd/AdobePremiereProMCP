@@ -137,6 +137,10 @@ var coreTools = []string{
 	"premiere_get_exporters", "premiere_get_export_presets",
 	"premiere_get_export_progress", "premiere_get_render_queue_status",
 	"premiere_export_audio_only",
+	// File-truth export watching: exports queue in AME and the scripting API
+	// exposes no real queue state, so a stable readable file is the only
+	// honest completion signal.
+	"premiere_await_exports", "premiere_export_status",
 
 	// Remote review loop
 	"premiere_warm_encoder", "premiere_export_preview", "premiere_generate_contact_sheet", "premiere_post_file_to_slack",
