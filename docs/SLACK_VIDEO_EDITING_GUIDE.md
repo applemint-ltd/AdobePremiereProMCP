@@ -100,6 +100,9 @@ order,clip,duration,from,to,text,caption,transition
 3,interview,6,,,,So we packed everything.,fade to black
 ```
 
+Running storyboard variants for A/B testing (Reels/TikTok)? See
+[SHORTS_AB_TESTING_PLAYBOOK.md](SHORTS_AB_TESTING_PLAYBOOK.md).
+
 Before building anything, the bot checks every clip name against the
 project and tells you which ones it couldn't find -- so a typo becomes a
 question back to you, not a missing shot. After assembling, it posts a

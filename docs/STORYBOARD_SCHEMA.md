@@ -64,6 +64,9 @@ Rules of thumb:
   Premiere's Captions panel).
 - File paths that aren't in the project yet are imported automatically.
 
+For producing storyboard *variants* in bulk (A/B testing 9:16 shorts), see
+[SHORTS_AB_TESTING_PLAYBOOK.md](SHORTS_AB_TESTING_PLAYBOOK.md).
+
 ## Shot-list CSV
 
 Header-driven, columns in any order, only `clip` required:
