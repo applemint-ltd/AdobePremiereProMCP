@@ -215,7 +215,13 @@ def main():
               str(gate)[:160])
 
         # --- assemble both variants (storyboard carries its stamped name) ---
-        for v in exp["variants"]:
+        # Guard on expansion having produced variants: a failed expand leaves
+        # `exp` as an error payload, and iterating it would crash the harness
+        # instead of recording the FAILs above.
+        expanded = exp.get("variants", []) if isinstance(exp, dict) else []
+        if not expanded:
+            check("expand produced variants to assemble", False, "no variants — skipping dependent steps")
+        for v in expanded:
             ok, rep = s.call("premiere_assemble_storyboard",
                              {"storyboard_json": json.dumps(v["storyboard"])})
             placed = [x for x in rep.get("shots", []) if x.get("status") == "placed"] if ok else []

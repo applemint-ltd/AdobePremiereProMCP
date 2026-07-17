@@ -215,12 +215,11 @@ produced which file") if the tracking sheet is ever wrong.
 
 ### One directory tree per program, ASCII paths only
 
-**Known bug:** posting files to Slack fails when the project lives under a
-path with Japanese (or other NFD-normalized Unicode) characters — the upload
-path check breaks. Keep the whole tree ASCII
-(`/Users/you/shorts-lab/...`, not `/Users/you/ショート動画/...`). If you
-inherit a non-ASCII project, `premiere_save_project_as` to an ASCII path
-before exporting.
+ASCII paths are still a sensible default, but the Slack upload path check now
+NFC-normalizes both sides, so a project under a Japanese (or other
+NFD-normalized Unicode) folder — `/Users/you/ショート動画/...` — uploads fine;
+the `save_project_as`-to-ASCII dance is no longer required. (This was a real
+bug; it is fixed as of the wave-1 changes — see §9.)
 
 ```
 shorts-lab/
@@ -261,13 +260,29 @@ duplicates will produce ambiguity errors.
 
 ## 4. The base + variant storyboard pattern
 
-The storyboard schema (`storyboard/v1`) has **no variant or override
-concept**, and it rejects unknown keys (`additionalProperties: false` — you
-can't smuggle in an `"experiment"` field). So variants are plain file copies
-of a base storyboard, differing in exactly the lines that implement the
-experiment variable. This is a feature: `diff base.json hookB.json` *is* the
-experiment definition — run that diff before assembling and confirm it only
-touches the tested field (plus `sequence.name`).
+**The fast path — `premiere_storyboard_expand_variants`.** Give it one base
+storyboard plus a list of variants, each with field overrides (e.g. a
+different hook line), and it returns N validated storyboards with
+deterministic `{experiment_id}-{variant_id}` sequence names already stamped
+in. Its one-variable gate diffs each variant against the base and rejects any
+arm that changes more than one field path — the discipline below, enforced
+for you. Then assemble each returned storyboard with
+`premiere_assemble_storyboard`. Example call:
+
+```
+premiere_storyboard_expand_variants(
+  experiment_id="EXP014",
+  storyboard_json=<base>,
+  variants_json=[{"variant_id":"hookB","overrides":{"scenes[0].shots[0].text[0].content":"Still doing this manually?"}}])
+```
+
+**The mental model (and the by-hand fallback).** The storyboard schema itself
+has no variant field (`additionalProperties: false` — you can't smuggle in an
+`"experiment"` key), so a variant is just a base storyboard with a few lines
+changed. If you author variants by hand instead of using the tool, keep them
+as file copies differing in exactly the tested lines: `diff base.json
+hookB.json` *is* the experiment definition — confirm it only touches the
+tested field (plus `sequence.name`).
 
 Convention:
 
@@ -494,7 +509,7 @@ For each variant, in order:
 | Assemble report: `skipped_unresolved` / `failed` shot | A bad reference slipped past validation (e.g., project changed since) | Fix storyboard, **delete the partial sequence**, re-assemble |
 | Export returns success but no file appears | Job is queued or died in AME | Wait and re-poll the file; if AME died, `premiere_warm_encoder` and re-export |
 | Preview says `queued_not_confirmed` | Render not verified complete | Poll the preview file before contact-sheeting it |
-| Slack post fails on the path check | Non-ASCII / NFD project path bug | `premiere_save_project_as` to an ASCII path, re-export or move the file under it |
+| Slack post fails on the path check | File is outside the project folder and the temp dir (the only allowed roots) | Export/move the file under the project dir (`exports/` satisfies this). NFD/Japanese project paths are handled now — no ASCII workaround needed. |
 
 ---
 
@@ -622,9 +637,9 @@ below).
 | **No auto-transcription / auto-captions** | Author SRTs externally (e.g., Whisper on the VO audio) into `srt/`, then `premiere_add_subtitles_from_srt`. For shorts, per-shot `caption` lines in the storyboard are usually enough and need no external file. Each SRT import creates a *new* caption track and there is no read-back — import once; correct in the SRT file, not in Premiere. | FR-07 |
 | **No loudness measurement** | Set levels via the tools (target ~−14 LUFS), then measure the exported file: `ffmpeg -i EXP014-hookB-v1.mp4 -af ebur128 -f null -` and read the integrated LUFS. Adjust `music.level_db` / `premiere_normalize_all_audio` and re-export if off by more than ~1 LU. | FR-06 |
 | **Storyboard ignores declared width/height; no auto-reframe; all "vertical/TikTok" convenience tools broken or unverified** | Vertical sources (§6). Fallback: manual build into a `premiere_create_sequence(1080, 1920)` sequence with `fit_clip_to_frame` / `scale_all_clips_to_frame`. | FR-01, FR-02 |
-| **No variant/experiment concept in the schema** | File-copy convention + manual diff discipline (§4). | FR-03, FR-11 |
+| **Experiment manifest / tracking not yet automated** | `premiere_storyboard_expand_variants` now generates the variants and enforces one-variable discipline (§4); the tracking sheet is still maintained by hand until the manifest tool lands. | FR-11 |
 | **Baked-PNG text is not editable; single-line; fixed stroke/shadow; no safe-area guides** | To change text: remove the text clip and `premiere_add_text_layer` again — or re-assemble the corrected storyboard. Multi-line = stack layers. Safe areas by convention (§6). | FR-09 |
-| **Slack upload fails on non-ASCII (NFD) project paths; 512 MB cap** | ASCII-only project trees; `premiere_save_project_as` to an ASCII path to rescue an existing project. | FR-12 |
+| **Slack upload 512 MB cap** | Post a lower-bitrate preview if a master ever exceeds it (a 30s short never will). The old NFD/Japanese-path rejection is fixed — uploads work from non-ASCII project folders. | FR-12 (done) |
 | **Every assemble creates a new sequence** | Project hygiene: after a failed assemble, delete the orphan. Sequence management is by **0-based index** (`premiere_get_sequence_list` → `premiere_delete_sequence`), and **indices shift after every delete** — re-list before each destructive call, delete one at a time. For closed experiments, `premiere_save_project_as` an archive copy, then prune the working project. | FR-10 |
 | **Export "success" = queued in AME; no real progress API** | Always poll the output file (existence + stable size) before declaring done or posting. `premiere_warm_encoder` once per session so the first render isn't a 1–2 minute cold start. | FR-04, FR-05 |
 | **Serial timeline engine** | One Premiere = one lane. Don't attempt parallel assembly; overlap AME renders with the next assembly instead (§5, step 12). Frame captures (~8s each) and previews are the expensive QC ops — full QC on the first variant, first-frame-only on the rest. | FR-13 |

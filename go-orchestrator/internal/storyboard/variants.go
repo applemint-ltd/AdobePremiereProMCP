@@ -63,7 +63,9 @@ type ExpandedVariant struct {
 
 const defaultNamingTemplate = "{experiment_id}-{variant_id}"
 
-var placeholderRe = regexp.MustCompile(`\{[a-zA-Z_]+\}`)
+// Any {...} token, so a typo'd placeholder with digits, hyphens, or spaces
+// (e.g. "{experiment-id}", "{v2}") is caught, not shipped literally.
+var placeholderRe = regexp.MustCompile(`\{[^}]*\}`)
 
 // ExpandVariants expands a base storyboard into one validated storyboard per
 // variant. Every failure names the offending variant; any failure aborts the
@@ -277,6 +279,12 @@ func applyOverride(root map[string]any, path string, value json.RawMessage) erro
 				return nil
 			}
 			if !exists {
+				// A null-delete of a leaf under a missing parent is a no-op:
+				// the field is already absent. Do NOT materialize a phantom
+				// empty object (it would trip Validate/the diff gate).
+				if isJSONNull(value) {
+					return nil
+				}
 				next := map[string]any{}
 				m[seg.key] = next
 				container = next

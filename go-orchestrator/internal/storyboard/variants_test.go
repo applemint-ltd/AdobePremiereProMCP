@@ -159,6 +159,44 @@ func TestExpandVariants_NullDeletesField(t *testing.T) {
 	}
 }
 
+func TestExpandVariants_NullDeleteMissingParentIsNoOp(t *testing.T) {
+	// Deleting a leaf whose parent is absent must not materialize a phantom
+	// empty object (which would trip Validate). Base has no music.
+	base := baseStoryboard(t)
+	base.Music = nil
+	_, err := ExpandVariants(ExpandVariantsInput{
+		Base:         base,
+		ExperimentID: "EXP014",
+		Variants: []VariantSpec{
+			// This is a no-op (music absent already), so it changes nothing —
+			// with the gate on that's an "identical to base" error, which is
+			// the correct signal, NOT a phantom-music validation failure.
+			{VariantID: "noop", Overrides: map[string]json.RawMessage{
+				"music.level_db": raw(`null`)}},
+		},
+		EnforceSingleVariable: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "identical to the base") {
+		t.Fatalf("null-delete of an absent field should be a clean no-op, got: %v", err)
+	}
+}
+
+func TestExpandVariants_NamingTemplateNonLetterPlaceholder(t *testing.T) {
+	// A typo'd placeholder with a hyphen must be rejected, not shipped.
+	_, err := ExpandVariants(ExpandVariantsInput{
+		Base:           baseStoryboard(t),
+		ExperimentID:   "EXP014",
+		NamingTemplate: "{experiment-id}-{variant_id}",
+		Variants: []VariantSpec{
+			{VariantID: "x", Overrides: map[string]json.RawMessage{
+				"scenes[0].shots[0].text[0].content": raw(`"X"`)}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown placeholder") {
+		t.Fatalf("hyphenated placeholder typo must be rejected, got: %v", err)
+	}
+}
+
 func TestExpandVariants_AdditiveIntermediateMaps(t *testing.T) {
 	base := baseStoryboard(t)
 	base.Music = nil // base without music

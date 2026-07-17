@@ -91,8 +91,18 @@ func registerBatchTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 			gomcp.WithBoolean("overwrite", gomcp.Description("Replace existing output files (default false: those items are skipped, so re-runs converge)")),
 		),
 		batchH(orch, logger, "batch_export_sequences", func(ctx context.Context, req gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-			ids, _ := extractStringSlice(req, "sequence_ids")
-			names, _ := extractStringSlice(req, "sequence_names")
+			// Surface malformed targeting args rather than swallowing them:
+			// nil targets mean "export EVERY sequence", so a wrongly-shaped
+			// sequence_ids (e.g. numbers, from the old sequence_indices
+			// contract) must error, not silently fan out to the whole project.
+			ids, err := optionalStringSlice(req, "sequence_ids")
+			if err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("sequence_ids must be an array of strings: %v", err)), nil
+			}
+			names, err := optionalStringSlice(req, "sequence_names")
+			if err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("sequence_names must be an array of strings: %v", err)), nil
+			}
 			result, err := orch.BatchExportViaQueue(ctx, &orchestrator.BatchExportParams{
 				SequenceIDs:      ids,
 				SequenceNames:    names,

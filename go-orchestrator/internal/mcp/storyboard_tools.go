@@ -126,7 +126,10 @@ func registerStoryboardTools(s *server.MCPServer, orch Orchestrator, logger *zap
 			if err := json.Unmarshal([]byte(argString(req, "variants_json", "")), &variants); err != nil {
 				return gomcp.NewToolResultError(fmt.Sprintf("variants_json is not a valid variant array: %v", err)), nil
 			}
-			extraPaths, _ := extractStringSlice(req, "allowed_extra_paths")
+			extraPaths, err := optionalStringSlice(req, "allowed_extra_paths")
+			if err != nil {
+				return gomcp.NewToolResultError(fmt.Sprintf("allowed_extra_paths must be an array of strings: %v", err)), nil
+			}
 
 			expanded, err := storyboard.ExpandVariants(storyboard.ExpandVariantsInput{
 				Base:                  base,

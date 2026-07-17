@@ -107,9 +107,17 @@ func (e *Engine) BatchExportViaQueue(ctx context.Context, params *BatchExportPar
 	}
 	byID := map[string]*SequenceListEntry{}
 	byName := map[string]*SequenceListEntry{}
+	nameCount := map[string]int{}
 	for _, entry := range list.Sequences {
 		byID[entry.SequenceID] = entry
-		byName[entry.Name] = entry
+		nameCount[entry.Name]++
+	}
+	for _, entry := range list.Sequences {
+		// Only unique names are addressable by name; duplicates are handled
+		// as an ambiguity error below rather than silently last-wins.
+		if nameCount[entry.Name] == 1 {
+			byName[entry.Name] = entry
+		}
 	}
 
 	type workItem struct {
@@ -140,6 +148,8 @@ func (e *Engine) BatchExportViaQueue(ctx context.Context, params *BatchExportPar
 		for _, name := range params.SequenceNames {
 			if entry, ok := byName[name]; ok {
 				items = append(items, &workItem{entry: entry})
+			} else if nameCount[name] > 1 {
+				addUnresolved(name, fmt.Sprintf("%d sequences share the name %q — target it by sequence_id instead (premiere_get_sequence_list)", nameCount[name], name), false)
 			} else {
 				addUnresolved(name, "sequence not found — check premiere_get_sequence_list", false)
 			}
@@ -166,6 +176,15 @@ func (e *Engine) BatchExportViaQueue(ctx context.Context, params *BatchExportPar
 		name = strings.ReplaceAll(name, "{sequence_id}", it.entry.SequenceID)
 		name = strings.ReplaceAll(name, "{index}", fmt.Sprintf("%d", i))
 		name = strings.TrimSpace(driveUnsafeFilenameChars.ReplaceAllString(name, "_"))
+		if name == "" {
+			// An all-unsafe/whitespace template would make path == OutputDir,
+			// and with overwrite=true os.Remove would target the batch's own
+			// output directory. Refuse it.
+			it.result.Status = "failed"
+			it.result.Error = "filename_template rendered an empty name for this sequence — include {sequence_name}, {sequence_id}, or {index}"
+			it.entry = nil
+			continue
+		}
 		path := filepath.Join(params.OutputDir, name)
 		if owner, dup := usedPaths[path]; dup {
 			it.result.Status = "failed"

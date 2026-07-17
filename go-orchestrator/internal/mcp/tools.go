@@ -858,6 +858,17 @@ func toolResultJSON(v any) (*gomcp.CallToolResult, error) {
 
 // extractStringSlice pulls a []string from the request arguments map.
 // It handles both []string and []any (the common JSON-unmarshaled form).
+// optionalStringSlice returns nil,nil when the key is absent (a legitimate
+// "not provided"), but propagates the parse error when the key IS present
+// and malformed — so a caller passing e.g. numbers instead of strings gets
+// a hard error instead of silently degrading to the empty-slice default.
+func optionalStringSlice(req gomcp.CallToolRequest, key string) ([]string, error) {
+	if gomcp.ParseArgument(req, key, nil) == nil {
+		return nil, nil
+	}
+	return extractStringSlice(req, key)
+}
+
 func extractStringSlice(req gomcp.CallToolRequest, key string) ([]string, error) {
 	raw := gomcp.ParseArgument(req, key, nil)
 	if raw == nil {

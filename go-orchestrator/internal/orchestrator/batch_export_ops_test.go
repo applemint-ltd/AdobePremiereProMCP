@@ -241,6 +241,51 @@ func TestBatchExport_AwaitAllHonest(t *testing.T) {
 	}
 }
 
+func TestBatchExport_DuplicateNameIsAmbiguous(t *testing.T) {
+	// A project with two sequences sharing a name: targeting that name must
+	// fail as ambiguous, not silently pick one (last-wins).
+	premiere := &mockPremiereClient{
+		evalResults: map[string]string{
+			"getSequenceList": `{"count":2,"sequences":[
+				{"index":0,"name":"Final","sequence_id":"seq-old"},
+				{"index":1,"name":"Final","sequence_id":"seq-new"}]}`,
+			"setActiveSequence": `{"ok":true}`,
+			"exportSequence":    `{"queued":true}`,
+		},
+	}
+	e := newTestEngine(&mockMediaClient{}, nil, premiere)
+	res, err := e.BatchExportViaQueue(context.Background(), &BatchExportParams{
+		SequenceNames: []string{"Final"}, OutputDir: t.TempDir(), Await: "none",
+	})
+	if err != nil {
+		t.Fatalf("BatchExportViaQueue: %v", err)
+	}
+	if res.Failed != 1 || res.Queued != 0 {
+		t.Fatalf("ambiguous name must fail, not export: %+v", res)
+	}
+	if !strings.Contains(res.Items[0].Error, "share the name") {
+		t.Fatalf("want an ambiguity error, got: %+v", res.Items[0])
+	}
+	if len(callsTo(premiere, "exportSequence")) != 0 {
+		t.Fatalf("nothing should be queued for an ambiguous name")
+	}
+}
+
+func TestBatchExport_EmptyFilenameRefused(t *testing.T) {
+	e, _ := newBatchTestEngine()
+	res, err := e.BatchExportViaQueue(context.Background(), &BatchExportParams{
+		SequenceIDs: []string{"seq-a"}, OutputDir: t.TempDir(),
+		FilenameTemplate: "   ", // whitespace-only → TrimSpace to empty
+		Await:            "none",
+	})
+	if err != nil {
+		t.Fatalf("BatchExportViaQueue: %v", err)
+	}
+	if res.Failed != 1 || !strings.Contains(res.Items[0].Error, "empty name") {
+		t.Fatalf("empty rendered filename must be refused (never os.Remove the output dir): %+v", res.Items[0])
+	}
+}
+
 func TestBatchExport_AwaitNoneReturnsQueued(t *testing.T) {
 	e, _ := newBatchTestEngine()
 	res, err := e.BatchExportViaQueue(context.Background(), &BatchExportParams{
