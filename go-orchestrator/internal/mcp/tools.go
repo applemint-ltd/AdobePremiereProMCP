@@ -107,7 +107,7 @@ func registerEditingTools(s *server.MCPServer, orch Orchestrator, logger *zap.Lo
 				gomcp.Description("Frame height in pixels (default: 1080). Common values: 1080 (1080p/vertical), 2160 (4K UHD), 1920 (vertical 9:16)."),
 			),
 			gomcp.WithNumber("frame_rate",
-				gomcp.Description("Frame rate in frames per second (default: 24). Common values: 23.976, 24, 25 (PAL), 29.97, 30, 50, 59.94, 60."),
+				gomcp.Description("Frame rate in frames per second (default: 29.97, the Taiwan/NTSC house standard). The sequence is always created with square pixels (PAR 1.0). Common values: 23.976, 24, 25 (PAL), 29.97, 30, 50, 59.94, 60."),
 			),
 			gomcp.WithNumber("video_tracks",
 				gomcp.Description("Number of video tracks to create (default: 3). Minimum 1. More tracks can be added later."),
@@ -465,7 +465,7 @@ func makeCreateSequenceHandler(orch Orchestrator, logger *zap.Logger) server.Too
 		params := &CreateSequenceParams{
 			Name:        name,
 			Resolution:  Resolution{Width: uint32(width), Height: uint32(height)},
-			FrameRate:   gomcp.ParseFloat64(req, "frame_rate", 24),
+			FrameRate:   gomcp.ParseFloat64(req, "frame_rate", 29.97), // Taiwan/NTSC house default
 			VideoTracks: uint32(gomcp.ParseInt(req, "video_tracks", 3)),
 			AudioTracks: uint32(gomcp.ParseInt(req, "audio_tracks", 2)),
 		}

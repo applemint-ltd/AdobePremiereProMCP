@@ -242,6 +242,51 @@ function _defaultSequencePreset(fps) {
     return null;
 }
 
+// _applyHouseSequenceStandard(seq, fps)
+// Enforces this shop's house standard on a freshly-created sequence:
+// SQUARE pixels (videoPixelAspectRatio 1.0) and a 29.97 fps timebase by
+// default. We edit for Taiwan (NTSC, 29.97) — sequences must not inherit a
+// PAL 25 fps timebase or a non-square (D1/DV/anamorphic) pixel aspect ratio
+// from a source clip or a locale default. PAR is forced unconditionally;
+// the frame rate is set to `fps` (caller passes 29.97 unless a different
+// rate was explicitly requested). Non-fatal: returns the fields it changed,
+// or notes why it couldn't. 29.97 fps = 254016000000 * 1001 / 30000 =
+// 8475667200 ticks per frame (Premiere's project timebase is 254016000000
+// ticks/second).
+function _applyHouseSequenceStandard(seq, fps) {
+    var changed = [];
+    if (!seq || typeof seq.getSettings !== "function") {
+        return { changed: changed, note: "sequence exposes no getSettings()" };
+    }
+    try {
+        var st = seq.getSettings();
+        if (!st) return { changed: changed, note: "getSettings() returned nothing" };
+
+        // Square pixels, always.
+        if (st.videoPixelAspectRatio != 1.0) {
+            st.videoPixelAspectRatio = 1.0;
+            changed.push("videoPixelAspectRatio=1.0");
+        }
+
+        // 29.97 (or the explicitly requested rate) timebase.
+        var target = parseFloat(fps) || 29.97;
+        var TICKS_PER_SECOND = 254016000000.0;
+        var ticks = Math.round(TICKS_PER_SECOND * 1001 / 30000); // exact for 29.97
+        if (Math.abs(target - 29.97) > 0.01) {
+            ticks = Math.round(TICKS_PER_SECOND / target);
+        }
+        if (st.videoFrameRate && typeof st.videoFrameRate.ticks !== "undefined") {
+            st.videoFrameRate.ticks = String(ticks);
+            changed.push("videoFrameRate=" + target);
+        }
+
+        seq.setSettings(st);
+        return { changed: changed };
+    } catch (e) {
+        return { changed: changed, note: "could not apply house standard: " + e.message };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // createSequence(paramsJson) - Create a new sequence
 // ---------------------------------------------------------------------------
@@ -290,6 +335,9 @@ function createSequence(paramsJson) {
                 seq.frameSizeVertical = height;
             } catch (dimErr) {}
         }
+        // Lock the house standard: square pixels + 29.97 timebase (Taiwan/
+        // NTSC), regardless of what the preset or a resize left behind.
+        var houseStd = _applyHouseSequenceStandard(seq, fps);
         return _ok({
             name: seq.name || name,
             sequenceID: seq.sequenceID || "",
@@ -297,6 +345,7 @@ function createSequence(paramsJson) {
             height: height,
             fps: fps,
             createdVia: madeViaPreset ? "preset" : "dialog_fallback",
+            houseStandard: houseStd,
             videoTrackCount: seq.videoTracks ? seq.videoTracks.numTracks : 0,
             audioTrackCount: seq.audioTracks ? seq.audioTracks.numTracks : 0,
             timebase: seq.timebase || ""
@@ -1718,12 +1767,18 @@ function createSequenceFromClips(paramsJson) {
         app.project.createNewSequenceFromClips(name, items);
 
         var seq = app.project.activeSequence;
+        // Frame SIZE is inherited from the first clip (this is how a 9:16
+        // source yields a 9:16 sequence), but PAR and frame rate must NOT be:
+        // force square pixels + 29.97 (Taiwan/NTSC house standard) so a 25 fps
+        // or non-square source clip can't set the timeline's timebase/PAR.
+        var houseStd = _applyHouseSequenceStandard(seq, 29.97);
         return _ok({
             name: seq ? (seq.name || name) : name,
             sequenceID: seq ? (seq.sequenceID || "") : "",
             clipCount: items.length,
             frameSizeHorizontal: seq ? (seq.frameSizeHorizontal || 0) : 0,
             frameSizeVertical: seq ? (seq.frameSizeVertical || 0) : 0,
+            houseStandard: houseStd,
             timebase: seq ? (seq.timebase || "") : ""
         });
     } catch (e) {
