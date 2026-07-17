@@ -104,11 +104,52 @@ func (e *Engine) CreateSequence(ctx context.Context, params *CreateSequenceParam
 		e.logger.Error("create_sequence: failed", zap.Error(err))
 		return nil, fmt.Errorf("failed to create sequence %q — make sure a project is open (try premiere_open_project first): %w", params.Name, err)
 	}
+
+	// The dialog-free host path creates from a bundled HD 1080p 29.97 preset
+	// (square pixels, 29.97 timebase — the Taiwan/NTSC house standard) and
+	// then can't resize on 2026: direct frameSizeHorizontal assignment AND
+	// an in-function setSettings both silently no-op on the just-created,
+	// unsettled sequence. A SEPARATE setSettings call on the now-settled
+	// sequence DOES apply (verified live), so do the resize here as a second
+	// step when a non-1080p size was requested.
+	w, h := int(params.Resolution.Width), int(params.Resolution.Height)
+	if w > 0 && h > 0 && (w != 1920 || h != 1080) {
+		if idx, ok := e.activeSequenceIndex(ctx); ok {
+			if _, serr := e.SetSequenceSettings(ctx, &SetSequenceSettingsParams{
+				SequenceIndex: idx, Width: &w, Height: &h,
+			}); serr != nil {
+				e.logger.Warn("create_sequence: post-create resize failed", zap.Error(serr))
+			}
+		} else {
+			e.logger.Warn("create_sequence: could not locate the new sequence to resize")
+		}
+	}
+
 	e.logger.Info("create_sequence: success",
 		zap.String("sequence_id", res.SequenceID),
 		zap.String("name", res.Name),
 	)
 	return res, nil
+}
+
+// activeSequenceIndex returns the 0-based index of the currently active
+// sequence (the one a create_* call just made active), for follow-up
+// settings calls that address sequences by index.
+func (e *Engine) activeSequenceIndex(ctx context.Context) (int, bool) {
+	list, err := e.GetSequenceList(ctx)
+	if err != nil {
+		return 0, false
+	}
+	for _, s := range list.Sequences {
+		if s.IsActive {
+			return s.Index, true
+		}
+	}
+	// Fall back to the last sequence (a fresh create appends).
+	if n := len(list.Sequences); n > 0 {
+		return list.Sequences[n-1].Index, true
+	}
+	return 0, false
 }
 
 // GetTimeline retrieves the current state of a sequence's timeline.
