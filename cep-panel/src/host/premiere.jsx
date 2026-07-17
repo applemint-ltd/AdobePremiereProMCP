@@ -242,18 +242,24 @@ function _defaultSequencePreset(fps) {
     return null;
 }
 
-// _applyHouseSequenceStandard(seq, fps)
-// Enforces this shop's house standard on a freshly-created sequence:
-// SQUARE pixels (videoPixelAspectRatio 1.0) and a 29.97 fps timebase by
-// default. We edit for Taiwan (NTSC, 29.97) — sequences must not inherit a
-// PAL 25 fps timebase or a non-square (D1/DV/anamorphic) pixel aspect ratio
-// from a source clip or a locale default. PAR is forced unconditionally;
-// the frame rate is set to `fps` (caller passes 29.97 unless a different
-// rate was explicitly requested). Non-fatal: returns the fields it changed,
-// or notes why it couldn't. 29.97 fps = 254016000000 * 1001 / 30000 =
-// 8475667200 ticks per frame (Premiere's project timebase is 254016000000
-// ticks/second).
-function _applyHouseSequenceStandard(seq, fps) {
+// _applyHouseSequenceStandard(seq, fps, width, height)
+// Enforces this shop's house standard on a freshly-created sequence via ONE
+// setSettings() call: optional frame SIZE, SQUARE pixels
+// (videoPixelAspectRatio 1.0), and a 29.97 fps timebase by default. We edit
+// for Taiwan (NTSC, 29.97) — sequences must not inherit a PAL 25 fps
+// timebase or a non-square (D1/DV/anamorphic) pixel aspect ratio from a
+// source clip or a locale default.
+//
+// setSettings is used for the resize too: direct `seq.frameSizeHorizontal =`
+// assignment silently fails on Premiere 2026 (verified live — a 1080x1920
+// request stayed 1920x1080), whereas getSettings -> videoFrameWidth/Height
+// -> setSettings actually applies. Pass width/height (0/undefined to leave
+// the size as-is, e.g. the clip-inherited size from createSequenceFromClips).
+// PAR is forced unconditionally; the frame rate is set to `fps` (caller
+// passes 29.97 unless a different rate was explicitly requested). Non-fatal:
+// returns the fields it changed, or a note. 29.97 fps = 254016000000 * 1001
+// / 30000 = 8475667200 ticks/frame (project timebase 254016000000 ticks/s).
+function _applyHouseSequenceStandard(seq, fps, width, height) {
     var changed = [];
     if (!seq || typeof seq.getSettings !== "function") {
         return { changed: changed, note: "sequence exposes no getSettings()" };
@@ -261,6 +267,15 @@ function _applyHouseSequenceStandard(seq, fps) {
     try {
         var st = seq.getSettings();
         if (!st) return { changed: changed, note: "getSettings() returned nothing" };
+
+        // Frame size (setSettings works where direct assignment doesn't).
+        var w = parseInt(width, 10);
+        var h = parseInt(height, 10);
+        if (w > 0 && h > 0) {
+            st.videoFrameWidth = w;
+            st.videoFrameHeight = h;
+            changed.push("frameSize=" + w + "x" + h);
+        }
 
         // Square pixels, always.
         if (st.videoPixelAspectRatio != 1.0) {
@@ -328,16 +343,13 @@ function createSequence(paramsJson) {
         if (!seq) {
             return _err("createSequence did not create/activate a sequence");
         }
-        // Best-effort resize for non-1080 requests (the preset is 1080p).
-        if (width !== 1920 || height !== 1080) {
-            try {
-                seq.frameSizeHorizontal = width;
-                seq.frameSizeVertical = height;
-            } catch (dimErr) {}
-        }
-        // Lock the house standard: square pixels + 29.97 timebase (Taiwan/
-        // NTSC), regardless of what the preset or a resize left behind.
-        var houseStd = _applyHouseSequenceStandard(seq, fps);
+        // Resize + lock the house standard in one setSettings call: the
+        // preset is 1080p, so vertical/other sizes are applied here (direct
+        // frameSizeHorizontal assignment silently fails on 2026), along with
+        // square pixels + 29.97 timebase (Taiwan/NTSC).
+        var wantResize = (width !== 1920 || height !== 1080);
+        var houseStd = _applyHouseSequenceStandard(seq, fps,
+            wantResize ? width : 0, wantResize ? height : 0);
         return _ok({
             name: seq.name || name,
             sequenceID: seq.sequenceID || "",

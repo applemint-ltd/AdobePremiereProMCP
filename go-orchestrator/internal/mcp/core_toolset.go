@@ -51,7 +51,7 @@ var coreTools = []string{
 	"premiere_create_sequence", "premiere_create_sequence_from_clips",
 	"premiere_get_active_sequence", "premiere_set_active_sequence", "premiere_get_sequence_list",
 	"premiere_duplicate_sequence", "premiere_rename_sequence", "premiere_delete_sequence",
-	"premiere_get_sequence_settings", "premiere_get_sequence_duration", "premiere_get_timeline",
+	"premiere_get_sequence_settings", "premiere_set_sequence_settings", "premiere_get_sequence_duration", "premiere_get_timeline",
 	"premiere_add_video_track", "premiere_add_audio_track",
 	"premiere_delete_video_track", "premiere_delete_audio_track",
 	"premiere_get_video_tracks", "premiere_get_audio_tracks",
