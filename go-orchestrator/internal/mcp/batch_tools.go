@@ -83,7 +83,7 @@ func registerBatchTools(s *server.MCPServer, orch Orchestrator, logger *zap.Logg
 			gomcp.WithArray("sequence_ids", gomcp.Description("Sequence IDs from premiere_get_sequence_list (stable handles; preferred)"), gomcp.WithStringItems()),
 			gomcp.WithArray("sequence_names", gomcp.Description("Sequence names, as an alternative to ids"), gomcp.WithStringItems()),
 			gomcp.WithString("output_dir", gomcp.Required(), gomcp.Description("Directory for the exported files (created if missing)")),
-			gomcp.WithString("preset", gomcp.Description("Semantic preset (default h264_1080p); resolved by the host against the AME system presets"), gomcp.Enum("h264_1080p", "h264_4k", "prores_422", "prores_4444", "dnxhd")),
+			gomcp.WithString("preset", gomcp.Description("Semantic preset or absolute .epr path (default h264_1080p). Semantic keys: h264_1080p (forces 1920x1080 — pillarboxes vertical sequences), h264_match_source (preserves sequence dimensions — use for 9:16 shorts; needs a host build with the key, else pass the Match Source .epr path directly), h264_4k, prores_422, prores_4444, dnxhd")),
 			gomcp.WithString("filename_template", gomcp.Description("Filename template; placeholders {sequence_name}, {sequence_id}, {index}. Default \"{sequence_name}.mp4\"")),
 			gomcp.WithBoolean("warm_encoder", gomcp.Description("Ensure AME is warm before queueing (default true)")),
 			gomcp.WithString("await", gomcp.Description("\"all\" (default): block until every file is confirmed or times out; \"none\": queue and return immediately"), gomcp.Enum("all", "none")),

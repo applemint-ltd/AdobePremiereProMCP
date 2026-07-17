@@ -36,9 +36,12 @@ digest, then cleans up everything it created.
 ### Run
 
 ```sh
-source .env            # for SLACK_BOT_TOKEN
+set -a; source .env; set +a   # export SLACK_BOT_TOKEN to child processes
 python3 scripts/smoke/golden_path_smoke.py
 ```
+
+(`set -a` matters: `.env` assigns without `export`, so a plain `source` sets
+shell-local variables the Python process never sees.)
 
 Exit 0 iff every check passed. It runs against whatever project is open and
 cleans up after itself (deletes its test sequence, bins and removes its test

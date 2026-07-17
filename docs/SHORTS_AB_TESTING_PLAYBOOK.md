@@ -455,12 +455,16 @@ For each variant, in order:
 10. **[serial]** `premiere_get_sequence_list` → find the `sequence_id` for
     `EXP014-hookB`. **Never guess the id** — export requires it, and
     assembling has just changed the sequence list.
-11. **[async]** `premiere_export` with preset `h264_1080p`, the explicit
-    `sequence_id`, and the deterministic output path
-    `exports/EXP014/EXP014-hookB-v1.mp4`. The preset is Match-Source:
-    because the sequence is 1080×1920, the file is 1080×1920. **"Success"
-    means QUEUED in Adobe Media Encoder, not rendered.** Don't report done
-    yet.
+11. **[async]** Export with a **dimension-preserving preset** — this is the
+    step that keeps 9:16 vertical (verified live: `h264_1080p` resolves to a
+    hard 1920×1080 preset that pillarboxes vertical sequences). Use
+    `premiere_batch_export_sequences` for the whole variant set, or
+    `premiere_export` per sequence, with `preset` set to `h264_match_source`
+    (or, on host builds without that key, the absolute path to
+    `…/systempresets/4E49434B_48323634/01 - Match Source - High bitrate.epr`).
+    Deterministic output path: `exports/EXP014/EXP014-hookB-v1.mp4`.
+    **"Success" means QUEUED in Adobe Media Encoder, not rendered.** Don't
+    report done yet — confirm with `premiere_await_exports`.
 12. **[serial — overlaps step 11]** Start step 6 for the next variant. This
     is the throughput trick: AME renders variant N while Premiere assembles
     variant N+1. Assembly is the bottleneck; renders on a warm encoder

@@ -879,6 +879,15 @@ function _resolvePresetPath(preset) {
             "4E49434B_48323634/00 - Match Source - High bitrate.epr",
             "4B434D58_48323634/Match Source - High bitrate.epr"
         ],
+        // The only h264 FINAL-export key that preserves sequence dimensions
+        // — critical for 9:16 vertical shorts. Added after live verification
+        // showed h264_1080p's High Quality 1080 HD.epr forces 1920x1080
+        // (pillarboxing vertical sequences); only h264_preview matched.
+        h264_match_source: [
+            "4E49434B_48323634/01 - Match Source - High bitrate.epr",
+            "4E49434B_48323634/00 - Match Source - High bitrate.epr",
+            "4B434D58_48323634/Match Source - High bitrate.epr"
+        ],
         h264_4k: [
             "4E49434B_48323634/High Quality 2160 4K.epr",
             "4E49434B_48323634/01 - Match Source - High bitrate.epr",

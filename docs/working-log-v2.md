@@ -75,6 +75,40 @@ The meta-takeaway matches the post's "start simple; complexity serves necessity"
 - Auto-transcription (whisper) and the UXP Phase-0 spike remain the two deliberately-deferred larger efforts (see v1 §3 and `UXP_MIGRATION_COVERAGE.md`).
 - A stronger drift guard could map `coreTools` → op → ES target statically and fail if a core tool routes to a `knownMissingHostFns` entry — closing the gap §4 describes without relying on the runtime smoke.
 
+## 9. Shorts/A-B wave-1 live verification (2026-07-17)
+
+Live pass on Premiere 26.3 for the `feature/shorts-ab-wave1` branch (FR-12,
+FR-05, FR-03, FR-04 — all Go-side, no reload needed). Verdicts:
+
+- **Golden smoke 13/13 on the rebuilt binary** — the wave-1 rework (incl.
+  deleting the dead host batch-export path) regressed nothing.
+- **New third gate `scripts/smoke/ab_batch_smoke.py`: 18/18.** Live proof of:
+  variant expansion + one-variable diff gate + live sequence-name collision
+  refusal; assemble×2; batch export with file-truth completion (done only on
+  stable+probeable files); re-run convergence (skipped, not re-rendered);
+  await/status honesty (bogus path → timeout, snapshot never certifies);
+  `premiere_export` active-sequence fallback; **Slack upload from an
+  NFD-named Japanese directory** (the FR-12 fix, end-to-end against real
+  Slack).
+- **`createSequenceFromClips` DOES inherit 9:16** — a storyboard assembled
+  from 720×1280 sources yields a genuinely vertical sequence (confirmed by a
+  Match-Source export probing 720×1280). The vertical problem is NOT the
+  assembler when sources are vertical.
+- **`h264_1080p` is NOT Match Source** — it resolves to `High Quality 1080
+  HD.epr`, which forces 1920×1080 and pillarboxes vertical sequences; the
+  Match Source candidates in its list never trigger because that file
+  exists. Only `h264_preview` prefers Match Source. Fix: new
+  `h264_match_source` key added to `_resolvePresetPath` (**third jsx change
+  pending the panel reload**); until the reload, pass the Match Source .epr
+  path directly as `preset` — the resolver uses .epr paths as-is (this is
+  what the ab smoke does).
+- `premiere_export`'s typed-RPC result reports `status:"unknown"`/empty
+  job_id on 2026 even when the render lands — one more reason file truth
+  (await_exports) is the only completion signal.
+- Ops footnote: `.env` had an unquoted-space `PREMIERE_PRO_PATH` that broke
+  `source .env` (fixed by quoting), and `.env` assigns without `export`, so
+  smoke runs need `set -a; source .env; set +a` (READMEs updated).
+
 ---
 
-_v2 commits, oldest first: clean-reload verification → frame reroute (AME still export is dead) → thumbnail real-dimensions → in-repo golden smoke → AME warm-up + FlexString → Lumetri stray-"2" fix + core-tool demotions + core smoke → dialog-free create_sequence (+ modal audit) → 7 code-review fixes. Two smoke gates green; two jsx fixes pending the next panel reload._
+_v2 commits, oldest first: clean-reload verification → frame reroute (AME still export is dead) → thumbnail real-dimensions → in-repo golden smoke → AME warm-up + FlexString → Lumetri stray-"2" fix + core-tool demotions + core smoke → dialog-free create_sequence (+ modal audit) → 7 code-review fixes. Two smoke gates green; two jsx fixes pending the next panel reload (three, counting wave-1's h264_match_source)._
