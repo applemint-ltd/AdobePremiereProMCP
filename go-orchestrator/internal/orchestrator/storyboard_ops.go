@@ -197,30 +197,65 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 	report.Warnings = append(report.Warnings, plan.Warnings...)
 
 	// --- Sequence ---
-	// Build the sequence FROM the first placeable clip. createNewSequence
-	// with an empty preset pops a modal "New Sequence" dialog on the hub
-	// that blocks the whole ExtendScript engine; createSequenceFromClips
-	// auto-detects settings from the clip with no dialog. Then clear the
-	// auto-placed clip so the placement loop below runs uniformly.
+	// Create the target sequence at a FIXED size + 29.97 fps with square
+	// pixels (the Taiwan/NTSC house standard) via the dialog-free create
+	// path. The old approach seeded from the first clip
+	// (createSequenceFromClips), which inherited that clip's dimensions AND
+	// its frame rate / pixel aspect ratio — so a 25 fps PAL or non-square
+	// source produced a wrong-timebase timeline. We now size the sequence
+	// deliberately and never inherit fps/PAR.
 	firstIdx := -1
+	firstPath := ""
 	for _, sp := range plan.Shots {
 		if !sp.Skipped && !sp.TextOnly {
 			firstIdx = sp.Clip.Index
+			firstPath = sp.Clip.MediaPath
 			break
 		}
 	}
 	if firstIdx < 0 {
 		return nil, fmt.Errorf("no clip-backed shot to seed the sequence from")
 	}
-	seqArgs, _ := json.Marshal(map[string]any{
-		"name":        plan.Sequence.Name,
-		"clipIndices": []int{firstIdx},
-	})
-	if _, err := e.premiere.EvalCommand(ctx, "createSequenceFromClips", string(seqArgs)); err != nil {
+
+	// Target dimensions: the storyboard's declared size, else the first
+	// clip's native size (probed via the media engine — preserving the old
+	// "inherit the clip's size" behavior for storyboards that don't declare
+	// one), else a 1080x1920 vertical default.
+	width, height := plan.Sequence.Width, plan.Sequence.Height
+	if width <= 0 || height <= 0 {
+		if firstPath != "" {
+			if asset, perr := e.media.ProbeMedia(ctx, firstPath); perr == nil && asset != nil &&
+				asset.Video != nil && asset.Video.Resolution.Width > 0 && asset.Video.Resolution.Height > 0 {
+				width = int(asset.Video.Resolution.Width)
+				height = int(asset.Video.Resolution.Height)
+			}
+		}
+		if width <= 0 || height <= 0 {
+			width, height = 1080, 1920
+			report.Warnings = append(report.Warnings, "Could not determine a sequence size from the storyboard or the first clip; defaulted to 1080x1920 vertical.")
+		}
+	}
+	fps := plan.Sequence.FPS
+	if fps <= 0 {
+		fps = 29.97
+	}
+	// Stamp the resolved size back so the baked-PNG text canvases (sized from
+	// plan.Sequence below) match the actual sequence.
+	plan.Sequence.Width, plan.Sequence.Height = width, height
+
+	if _, err := e.CreateSequence(ctx, &CreateSequenceParams{
+		Name:        plan.Sequence.Name,
+		Resolution:  Resolution{Width: uint32(width), Height: uint32(height)},
+		FrameRate:   fps,
+		VideoTracks: 3,
+		AudioTracks: 2,
+	}); err != nil {
 		return nil, fmt.Errorf("could not create sequence %q: %w", plan.Sequence.Name, err)
 	}
+	// createSequence yields an empty, active sequence — placement runs on it
+	// directly. Defensive clear in case a preset ever seeds a clip.
 	if err := e.clearActiveSequenceTracks(ctx); err != nil {
-		report.Warnings = append(report.Warnings, "could not clear the seed clip: "+err.Error())
+		report.Warnings = append(report.Warnings, "could not clear the new sequence: "+err.Error())
 	}
 
 	// --- Shots ---
@@ -397,6 +432,18 @@ func (e *Engine) AssembleStoryboard(ctx context.Context, sb *storyboard.Storyboa
 		pos += actual
 	}
 	report.TotalDurationSeconds = pos
+
+	// --- Fit clips to the frame ---
+	// The sequence size is now fixed independently of the clips, so a source
+	// whose aspect differs from the sequence (e.g. a 16:9 clip in a 9:16
+	// sequence) would sit unscaled. Fit every placed video clip to the frame
+	// (min-scale: whole clip visible, no crop). Same-aspect sources scale to
+	// fill exactly; different-aspect sources letterbox rather than spill
+	// off-frame. Runs before text overlays land on V1 so only the shot clips
+	// on V0 are touched.
+	if _, err := e.ScaleAllClipsToFrame(ctx); err != nil {
+		report.Warnings = append(report.Warnings, "could not scale clips to the frame: "+err.Error())
+	}
 
 	// --- Transitions (applied-or-reported, never silent) ---
 	for _, tr := range transitions {
