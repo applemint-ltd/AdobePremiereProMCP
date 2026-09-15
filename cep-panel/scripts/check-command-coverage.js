@@ -376,7 +376,10 @@ vm.runInContext([
     "  getSettings:function(){return {videoFrameWidth:1280,videoFrameHeight:720,videoFrameRate:{ticks:'10584000000'}};},",
     "  setSettings:function(){return true;}};",
     "var __badSequences=[];__badSequences.numSequences=0;",
-    "app={enableQE:function(){},project:{sequences:__badSequences,activeSequence:null,",
+    // createSequence resolves a stock .sqpreset via app.path + File(), so the
+    // sandbox must provide both (ExtendScript allows File() without `new`).
+    "function File(p){if(!(this instanceof File))return new File(p);this.fsName=p;this.exists=true;this.open=function(){};this.close=function(){};}",
+    "app={path:'/Applications/Adobe Premiere Pro 2026/Adobe Premiere Pro 2026.app/',enableQE:function(){},project:{sequences:__badSequences,activeSequence:null,",
     "  createNewSequence:function(){__badSequences.push(__badSequence);__badSequences.numSequences=1;this.activeSequence=__badSequence;return 'bad-sequence';},",
     "  deleteSequence:function(sequence){var index=__badSequences.indexOf(sequence);if(index>=0)__badSequences.splice(index,1);__badSequences.numSequences=__badSequences.length;this.activeSequence=null;}}};",
     "qe={project:{getSequenceAt:function(){return {setFrameSize:function(){}};},getActiveSequence:function(){return {}}}};",

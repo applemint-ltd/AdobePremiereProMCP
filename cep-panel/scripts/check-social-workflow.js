@@ -157,7 +157,9 @@ function makeParameter(displayName, initialValue, status, readbackOverride) {
 function setMotionProject(positionParam, scaleParam) {
     var properties = [positionParam, scaleParam];
     properties.numItems = properties.length;
-    var components = [{ properties: properties }];
+    // Real Premiere components identify themselves; the host looks Motion up
+    // by matchName/displayName rather than assuming it is components[0].
+    var components = [{ matchName: "AE.ADBE Motion", displayName: "Motion", properties: properties }];
     components.numItems = components.length;
     var clips = [{ components: components }];
     clips.numItems = clips.length;

@@ -38,6 +38,9 @@
     // State
     // ---------------------------------------------------------------------------
     var csInterface = new CSInterface();
+    var extensionRoot = csInterface.getSystemPath(SystemPath.EXTENSION);
+    var hostLoader = require(path.join(extensionRoot, "src", "host-loader.js"));
+    var hostPaths = hostLoader.resolveHostPaths(extensionRoot);
     var wss = null;
     var activeConnections = new Set();
     var heartbeatTimer = null;
@@ -49,17 +52,9 @@
     // and sometimes the extension bundle root (.../cep-panel), depending on
     // how CEP's Node integration loaded this script. Probe both so host
     // script loading doesn't silently fail when the base differs.
-    function resolveHostScript(name) {
-        var direct = path.join(__dirname, "host", name).replace(/\\/g, "/");
-        if (fs.existsSync(direct)) return direct;
-        var viaSrc = path.join(__dirname, "src", "host", name).replace(/\\/g, "/");
-        if (fs.existsSync(viaSrc)) return viaSrc;
-        return direct; // fall back to the original guess; caller will log the failure
-    }
-
     // Lazy-loading state for the full premiere.jsx ExtendScript library
     var premiereJsxLoaded = false;
-    var premiereJsxPath = resolveHostScript("premiere.jsx");
+    var premiereJsxPath = hostPaths.premiere;
 
     // Stats tracking
     var stats = {
@@ -257,7 +252,7 @@
     // ---------------------------------------------------------------------------
     function loadPort() {
         // Check for port override via environment or config file
-        var configPath = path.join(__dirname, "..", "config.json");
+        var configPath = path.join(extensionRoot, "config.json");
         try {
             if (fs.existsSync(configPath)) {
                 var config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -304,26 +299,7 @@
         evalCommand:        function (p)       {
             var fn = p.function_name || "";
             var argsJson = p.args_json || "";
-
-            if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) {
-                throw new Error("Invalid ExtendScript function name: " + fn);
-            }
-
-            // Build lazy-load prefix: if the function doesn't exist yet,
-            // load the full premiere.jsx (once) to make it and mcpDispatch
-            // available.
-            var loadScript = "";
-            if (!premiereJsxLoaded) {
-                loadScript =
-                    'if (typeof mcpDispatch !== "function" || typeof ' + fn + ' !== "function") { ' +
-                    '  try { $.evalFile("' + premiereJsxPath + '"); } catch(loadErr) {} ' +
-                    '} ';
-            }
-
-            var callScript = "mcpDispatch(" + escapeForEval(fn) + "," +
-                escapeForEval(argsJson || "{}") + ")";
-
-            return loadScript + callScript;
+            return hostLoader.buildDispatchScript(premiereJsxPath, fn, argsJson);
         },
     };
 
@@ -719,27 +695,28 @@
     // Load ExtendScript host functions
     // ---------------------------------------------------------------------------
     function loadHostScript() {
-        var corePath = resolveHostScript("core.jsx");
+        var corePath = hostPaths.core;
         log("Loading core ExtendScript: " + corePath);
-        csInterface.evalScript('$.evalFile("' + corePath + '")', function (result) {
-            if (result === "EvalScript error.") {
-                log("Failed to load core.jsx -- ExtendScript error", "error");
-            } else {
-                log("Core ExtendScript loaded", "success");
-                // Eagerly attempt to load the full premiere.jsx in the background.
-                // If it fails (too large for $.evalFile), functions will be
-                // lazy-loaded on the first evalCommand call instead.
-                log("Loading extended functions from premiere.jsx...");
-                csInterface.evalScript('$.evalFile("' + premiereJsxPath + '")', function (result2) {
-                    if (result2 === "EvalScript error.") {
-                        log("Extended functions will be loaded on first use (lazy)", "info");
-                    } else {
-                        premiereJsxLoaded = true;
-                        log("All ExtendScript functions loaded", "success");
-                    }
-                });
-            }
+        csInterface.evalScript(hostLoader.buildLoadScript(corePath, ["ping"]), function (result) {
+            if (!hostLoadSucceeded(result, "core.jsx")) return;
+            log("Core ExtendScript loaded", "success");
+            log("Loading extended functions from premiere.jsx...");
+            csInterface.evalScript(hostLoader.buildLoadScript(premiereJsxPath, ["mcpDispatch", "ping"]), function (result2) {
+                premiereJsxLoaded = hostLoadSucceeded(result2, "premiere.jsx");
+                if (premiereJsxLoaded) log("All ExtendScript functions loaded", "success");
+            });
         });
+    }
+
+    function hostLoadSucceeded(rawResult, filename) {
+        try {
+            var result = JSON.parse(rawResult);
+            if (result.success === true) return true;
+            log("Failed to load " + filename + ": " + (result.error || "unknown host error"), "error");
+        } catch (err) {
+            log("Failed to load " + filename + ": " + String(rawResult), "error");
+        }
+        return false;
     }
 
     // Load the host script at startup
