@@ -113,7 +113,7 @@ func (e *Engine) ExportFrame(ctx context.Context, params *ExportFrameParams) (*G
 	if format != "jpeg" && format != "jpg" {
 		format = "png"
 	}
-	img, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, width, height, format)
+	img, err := e.media.ExtractFrameBytes(ctx, preview.OutputPath, atSeconds, width, height, format)
 	if err != nil {
 		return nil, fmt.Errorf("ExportFrame: could not extract the frame: %w", err)
 	}

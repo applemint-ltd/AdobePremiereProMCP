@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/audit"
 )
 
 const (

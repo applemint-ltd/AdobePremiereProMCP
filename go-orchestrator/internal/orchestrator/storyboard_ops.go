@@ -11,7 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/storyboard"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/storyboard"
 )
 
 // ---------------------------------------------------------------------------

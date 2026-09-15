@@ -25,6 +25,10 @@ type Config struct {
 	// SSEPort is the port for the SSE HTTP server (only used when Transport == "sse").
 	SSEPort int
 
+	// SSEHost is the bind host for the SSE HTTP server. It defaults to
+	// loopback because MCP tools can mutate an open Premiere project.
+	SSEHost string
+
 	// LogLevel controls the zap log verbosity (debug, info, warn, error).
 	LogLevel string
 
@@ -67,6 +71,7 @@ func Defaults() Config {
 	return Config{
 		Transport:               TransportStdio,
 		SSEPort:                 8080,
+		SSEHost:                 "127.0.0.1",
 		LogLevel:                "info",
 		RustEngineAddr:          "localhost:50052",
 		PythonIntelAddr:         "localhost:50053",
@@ -108,6 +113,7 @@ func defaultAuditDir() string {
 //
 //	MCP_TRANSPORT           - "stdio" or "sse"
 //	MCP_SSE_PORT            - port number for SSE transport
+//	MCP_SSE_HOST            - bind host for SSE transport (default 127.0.0.1)
 //	MCP_LOG_LEVEL           - "debug", "info", "warn", "error"
 //	RUST_ENGINE_ADDR        - gRPC address for the Rust media engine
 //	PYTHON_INTEL_ADDR       - gRPC address for the Python intelligence service
@@ -141,6 +147,10 @@ func LoadFromEnv() (Config, error) {
 			return cfg, fmt.Errorf("MCP_SSE_PORT %d out of range (1-65535)", port)
 		}
 		cfg.SSEPort = port
+	}
+
+	if v := os.Getenv("MCP_SSE_HOST"); v != "" {
+		cfg.SSEHost = v
 	}
 
 	if v := os.Getenv("MCP_LOG_LEVEL"); v != "" {

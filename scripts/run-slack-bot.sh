@@ -12,7 +12,7 @@ cd "$PROJECT_ROOT"
 
 # .env itself is loaded by cli/src/load-env.ts (via the `dotenv` npm package)
 # once the Node process starts -- not here. dotenv correctly parses values
-# with unquoted spaces (e.g. PREMIERE_PRO_PATH); bash `source .env` does not.
+# with unquoted spaces (e.g. PREMIERE_PATH); bash `source .env` does not.
 
 # launchd starts with a minimal PATH (no nvm/node/claude), so add the known
 # install locations directly. Sourcing ~/.zshrc/.zprofile here would run

@@ -7,7 +7,7 @@ package grpc
 import (
 	"context"
 
-	orch "github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
+	orch "github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
 )
 
 // ---------------------------------------------------------------------------
@@ -294,6 +294,27 @@ func (a *MediaAdapter) ProbeMedia(ctx context.Context, filePath string) (*orch.A
 	return convertGRPCAssetToOrchestrator(&res.Asset), nil
 }
 
+func (a *MediaAdapter) GenerateThumbnail(ctx context.Context, filePath string, opts *orch.ThumbnailOptions) (*orch.ThumbnailResult, error) {
+	params := GenerateThumbnailParams{FilePath: filePath}
+	if opts != nil {
+		params.Timestamp = secondsToNativeTimecode(opts.TimestampSeconds, 24)
+		params.OutputSize = Resolution{Width: opts.Width, Height: opts.Height}
+		params.OutputFormat = opts.OutputFormat
+	}
+	res, err := a.C.GenerateThumbnail(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return &orch.ThumbnailResult{
+		ThumbnailData: res.ThumbnailData,
+		OutputPath:    res.OutputPath,
+		ActualSize: orch.Resolution{
+			Width:  res.ActualSize.Width,
+			Height: res.ActualSize.Height,
+		},
+	}, nil
+}
+
 func (a *MediaAdapter) AnalyzeWaveform(ctx context.Context, filePath string, opts *orch.WaveformOptions) (*orch.WaveformResult, error) {
 	var params AnalyzeWaveformParams
 	params.FilePath = filePath
@@ -323,7 +344,7 @@ func (a *MediaAdapter) AnalyzeWaveform(ctx context.Context, filePath string, opt
 	}, nil
 }
 
-func (a *MediaAdapter) GenerateThumbnail(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error) {
+func (a *MediaAdapter) ExtractFrameBytes(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error) {
 	secs := uint32(atSeconds)
 	frames := uint32((atSeconds - float64(secs)) * 30)
 	res, err := a.C.GenerateThumbnail(ctx, GenerateThumbnailParams{
@@ -678,6 +699,23 @@ func convertOrchestratorEDLToGRPC(edl *orch.EDL) EditDecisionList {
 		SequenceResolution: Resolution{Width: edl.SequenceResolution.Width, Height: edl.SequenceResolution.Height},
 		SequenceFrameRate:  edl.SequenceFrameRate,
 		Entries:            entries,
+	}
+}
+
+func secondsToNativeTimecode(seconds float64, frameRate float64) Timecode {
+	if seconds < 0 {
+		seconds = 0
+	}
+	if frameRate <= 0 {
+		frameRate = 24
+	}
+	wholeSeconds := uint32(seconds)
+	return Timecode{
+		Hours:     wholeSeconds / 3600,
+		Minutes:   (wholeSeconds % 3600) / 60,
+		Seconds:   wholeSeconds % 60,
+		Frames:    uint32((seconds - float64(wholeSeconds)) * frameRate),
+		FrameRate: frameRate,
 	}
 }
 

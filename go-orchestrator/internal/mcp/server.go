@@ -1,11 +1,17 @@
 package mcp
 
 import (
+	"os"
+	"strconv"
+	"strings"
+
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/audit"
 )
+
+const defaultMCPPageSize = 100
 
 // NewMCPServer creates and configures an MCP server that exposes all
 // Premiere Pro editing tools to AI clients. The returned server is ready
@@ -35,20 +41,31 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger,
 		server.WithResourceCapabilities(false, true),
 		server.WithPromptCapabilities(true),
 		server.WithRecovery(),
+		server.WithToolHandlerMiddleware(requiredToolArgumentsMiddleware),
 		server.WithLogging(),
 		// Registered after WithRecovery so panics recovered there still flow
 		// back through the audit middleware as errors and get recorded.
 		server.WithToolHandlerMiddleware(newAuditMiddleware(aud, snap, logger)),
+		server.WithPaginationLimit(mcpPageSize(logger)),
 		server.WithInstructions("PremierPro MCP orchestrator — controls Adobe Premiere Pro 2026 through a curated, "+
 			"verified-working tool set (project/media, timeline editing, captions, baked-PNG text, frame capture, real export). "+
 			"Every tool call is audit-logged; premiere_get_session_digest and premiere_what_changed explain what happened. "+
 			"On-screen text works ONLY via premiere_add_text_layer; captions ONLY via SRT import. "+
+			"Set MCP_TOOL_PROFILE (core, standard, dialogue, captions, social, transitions, effects, proxies, delivery) "+
+			"to load a workflow-sized catalog; tools known broken on 2026 are never exposed by any profile. "+
 			"Read config://premiere-instructions for the golden storyboard->cut->export workflow."),
 	)
 
 	registerTools(s, orchestrator, logger)
 	registerAuditTools(s, aud, snapshots, logger)
-	applyToolCuration(s, logger)
+
+	// Order matters: drop the never-safe tools first so no profile — not even
+	// "all" — can widen the surface back onto them. Profiles then shape what
+	// remains, defaulting to "standard" (the verified everyday set, sized to
+	// stay under the 128-function limit most model APIs enforce). The full
+	// curated core is one env var away: MCP_TOOL_PROFILE=curated.
+	stripUnsafeTools(s, logger)
+	applyToolProfiles(s, logger)
 	registerResources(s)
 	registerPrompts(s)
 
@@ -58,4 +75,21 @@ func NewMCPServer(orchestrator Orchestrator, version string, logger *zap.Logger,
 	)
 
 	return s
+}
+
+func mcpPageSize(logger *zap.Logger) int {
+	raw := strings.TrimSpace(os.Getenv("MCP_PAGE_SIZE"))
+	if raw == "" {
+		return defaultMCPPageSize
+	}
+
+	pageSize, err := strconv.Atoi(raw)
+	if err != nil || pageSize <= 0 {
+		logger.Warn("ignoring invalid MCP_PAGE_SIZE",
+			zap.String("value", raw),
+			zap.Int("default", defaultMCPPageSize),
+		)
+		return defaultMCPPageSize
+	}
+	return pageSize
 }

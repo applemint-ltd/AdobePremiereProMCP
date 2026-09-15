@@ -22,6 +22,7 @@ import {
 // ── Main ──────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+
   // Show banner without tool count (we don't know yet)
   banner();
 

@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"context"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/storyboard"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/storyboard"
 )
 
 // MediaClient abstracts the Rust media engine gRPC service.
@@ -16,15 +16,18 @@ type MediaClient interface {
 	// ProbeMedia retrieves detailed metadata for a single file.
 	ProbeMedia(ctx context.Context, filePath string) (*AssetInfo, error)
 
+	// GenerateThumbnail extracts one encoded video frame.
+	GenerateThumbnail(ctx context.Context, filePath string, opts *ThumbnailOptions) (*ThumbnailResult, error)
+
 	// AnalyzeWaveform inspects audio levels and silence regions.
 	AnalyzeWaveform(ctx context.Context, filePath string, opts *WaveformOptions) (*WaveformResult, error)
 
 	// DetectScenes finds scene-change boundaries in a video file.
 	DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error)
 
-	// GenerateThumbnail extracts one frame of a media file as image bytes
+	// ExtractFrameBytes extracts one frame of a media file as image bytes
 	// (ffmpeg-backed; works on any file on disk, independent of Premiere).
-	GenerateThumbnail(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error)
+	ExtractFrameBytes(ctx context.Context, filePath string, atSeconds float64, width, height int, format string) ([]byte, error)
 }
 
 // IntelClient abstracts the Python intelligence gRPC service.
@@ -128,7 +131,7 @@ type Orchestrator interface {
 
 	// --- Nesting & Reframing ---
 	CreateNestedSequence(ctx context.Context, trackIndex int, clipIndices []int) (*GenericResult, error)
-	AutoReframeSequence(ctx context.Context, numerator, denominator int, motionPreset string) (*GenericResult, error)
+	AutoReframeSequence(ctx context.Context, sourceSequenceID string, numerator, denominator int, motionPreset, newName string, useNestedSequences bool) (*GenericResult, error)
 
 	// --- Generated Media ---
 	InsertBlackVideo(ctx context.Context, trackIndex int, startTime, duration float64) (*GenericResult, error)
@@ -296,7 +299,7 @@ type Orchestrator interface {
 	AddCaption(ctx context.Context, startTime, endTime float64, text, format string) (*GenericResult, error)
 	EditCaption(ctx context.Context, trackIndex, captionIndex int, text string) (*GenericResult, error)
 	DeleteCaption(ctx context.Context, trackIndex, captionIndex int) (*GenericResult, error)
-	ExportCaptions(ctx context.Context, outputPath, format string) (*GenericResult, error)
+	ExportCaptions(ctx context.Context, sequenceID, outputPath, format string) (*GenericResult, error)
 	StyleCaptions(ctx context.Context, trackIndex int, font string, size float64, color, bgColor, position string) (*GenericResult, error)
 	CreateColorMatte(ctx context.Context, name string, red, green, blue, width, height int) (*GenericResult, error)
 	PlaceColorMatte(ctx context.Context, projectItemIndex, trackIndex int, startTime, duration float64) (*GenericResult, error)
@@ -339,6 +342,9 @@ type Orchestrator interface {
 
 	// --- Media Analysis (Rust engine) ---
 	ScanAssets(ctx context.Context, dir string, recursive bool, extensions []string) (*ScanResult, error)
+	ProbeMedia(ctx context.Context, filePath string) (*AssetInfo, error)
+	GenerateThumbnail(ctx context.Context, filePath string, opts *ThumbnailOptions) (*ThumbnailResult, error)
+	AnalyzeWaveform(ctx context.Context, filePath string, opts *WaveformOptions) (*WaveformResult, error)
 	DetectScenes(ctx context.Context, filePath string, threshold float64) (*SceneResult, error)
 
 	// --- Intelligence (Python service) ---
@@ -351,7 +357,7 @@ type Orchestrator interface {
 	GetMulticamAngles(ctx context.Context, trackIndex, clipIndex int) (*GenericResult, error)
 
 	// --- Proxy Workflow ---
-	CreateProxy(ctx context.Context, projectItemIndex int, presetPath string) (*GenericResult, error)
+	CreateProxy(ctx context.Context, projectItemIndex int, outputPath, presetPath string) (*GenericResult, error)
 	AttachProxy(ctx context.Context, projectItemIndex int, proxyPath string) (*GenericResult, error)
 	HasProxy(ctx context.Context, projectItemIndex int) (*GenericResult, error)
 	GetProxyPath(ctx context.Context, projectItemIndex int) (*GenericResult, error)

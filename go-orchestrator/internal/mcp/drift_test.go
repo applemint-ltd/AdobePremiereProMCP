@@ -29,42 +29,10 @@ import (
 // entry is removed and the tool can be re-evaluated for the core set. The
 // list must only ever shrink.
 var knownMissingHostFns = map[string]string{
-	"generateRoughCut":          "premiere_generate_rough_cut (brokenTools)",
-	"createSocialCuts":          "premiere_create_social_cuts (brokenTools)",
-	"refineEdit":                "premiere_refine_edit (brokenTools)",
-	"smartCut":                  "premiere_smart_cut (brokenTools)",
-	"smartTrim":                 "premiere_smart_trim (brokenTools)",
-	"autoColorMatch":            "premiere_auto_color_match (brokenTools)",
-	"autoAudioLevels":           "premiere_auto_audio_levels (brokenTools)",
-	"suggestTransitions":        "premiere_suggest_transitions (brokenTools)",
-	"generateTrailer":           "premiere_generate_trailer (brokenTools)",
-	"estimateRenderTime":        "premiere_estimate_render_time (brokenTools)",
-	"analyzeClip":               "premiere_analyze_clip (brokenTools)",
-	"analyzeSequence":           "premiere_analyze_sequence (brokenTools)",
-	"generateEditSummary":       "premiere_generate_edit_summary (brokenTools)",
-	"suggestMusic":              "premiere_suggest_music (brokenTools)",
-	"suggestReplacements":       "premiere_suggest_replacements (brokenTools)",
-	"detectAudioIssues":         "premiere_detect_audio_issues (brokenTools)",
-	"findSimilarClips":          "premiere_find_similar_clips (brokenTools)",
-	"autoOrganizeProject":       "premiere_auto_organize_project (brokenTools)",
-	"createReviewMarkers":       "premiere_create_review_markers (brokenTools)",
-	"checkDeliverySpecs":        "premiere_check_delivery_specs (brokenTools)",
-	"createProjectReport":       "premiere_create_project_report (brokenTools)",
-	"addBRollSuggestions":       "premiere_add_broll_suggestions (brokenTools)",
-	"aITagClips":                "premiere_tag_clips (brokenTools)",
-	"exportEDLFile":             "premiere_export_edl_file (brokenTools)",
-	"importOMFFile":             "premiere_import_omf (brokenTools)",
-	"listExportPresetsFromDisk": "premiere_list_export_presets_disk (brokenTools)",
-	"selectAll":                 "premiere_select_all (brokenTools)",
-	"executeMenuItemByID":       "premiere_execute_menu_item (escape hatch; ES fn missing)",
-	"applyVignetteEffect":       "effect_chain_ops variant; premiere_apply_vignette uses applyVignette",
-	"getSequenceStatistics":     "premiere_get_sequence_statistics (brokenTools)",
-	"getExportHistory2":         "duplicate registration variant in delivery_ops",
-	"getEstimatedRenderTime2":   "duplicate registration variant",
-	"getInstalledEffects2":      "duplicate registration variant",
-	"getInstalledPlugins2":      "duplicate registration variant",
-	"getInstalledTransitions2":  "duplicate registration variant",
-	"getPerformanceReport2":     "duplicate registration variant",
+	// Empty: upstream #13 defined every previously-missing host function —
+	// 11 as honest `unsupported` stubs, 25 as real implementations. Their
+	// tools stay in brokenTools until verified against live Premiere 2026;
+	// see the "newly implemented upstream" block there.
 }
 
 const hostDir = "../../../cep-panel/src/host"
@@ -267,6 +235,9 @@ func TestCurationListsAreValid(t *testing.T) {
 }
 
 func TestCuratedSurfaceSize(t *testing.T) {
+	// The default profile is now "standard" (sized for the 128-function model
+	// limit); the full verified core set is the "curated" profile.
+	t.Setenv("MCP_TOOL_PROFILE", "curated")
 	t.Setenv("MCP_EXPOSE_ALL_TOOLS", "")
 	t.Setenv("MCP_ENABLE_ESCAPE_HATCHES", "")
 	s := NewMCPServer(nil, "drift-test", zap.NewNop(), nil, nil, false)

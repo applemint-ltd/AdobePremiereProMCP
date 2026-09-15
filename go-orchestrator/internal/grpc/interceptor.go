@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/metadata"
 
-	premierepb "github.com/anthropics/premierpro-mcp/gen/go/premierpro/premiere/v1"
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
+	premierepb "github.com/applemint-ltd/AdobePremiereProMCP/gen/go/premierpro/premiere/v1"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/audit"
 )
 
 // pingConn waits (bounded by ctx) for a lazily-dialed gRPC channel to reach

@@ -9,8 +9,8 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/orchestrator"
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/storyboard"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/orchestrator"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/storyboard"
 )
 
 // registerStoryboardTools exposes the storyboard pipeline: schema for

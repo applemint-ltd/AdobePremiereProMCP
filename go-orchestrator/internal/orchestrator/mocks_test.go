@@ -9,16 +9,17 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockMediaClient struct {
-	scanResult    *ScanResult
-	scanErr       error
-	probeResult   *AssetInfo
-	probeErr      error
-	waveformResult *WaveformResult
-	waveformErr   error
-	sceneResult   *SceneResult
-	sceneErr      error
-	thumbnailData []byte
-	thumbnailErr  error
+	scanResult      *ScanResult
+	scanErr         error
+	probeResult     *AssetInfo
+	probeErr        error
+	waveformResult  *WaveformResult
+	waveformErr     error
+	sceneResult     *SceneResult
+	sceneErr        error
+	thumbnailData   []byte
+	thumbnailErr    error
+	thumbnailResult *ThumbnailResult
 }
 
 func (m *mockMediaClient) ScanAssets(_ context.Context, _ string, _ bool, _ []string) (*ScanResult, error) {
@@ -29,6 +30,10 @@ func (m *mockMediaClient) ProbeMedia(_ context.Context, _ string) (*AssetInfo, e
 	return m.probeResult, m.probeErr
 }
 
+func (m *mockMediaClient) GenerateThumbnail(_ context.Context, _ string, _ *ThumbnailOptions) (*ThumbnailResult, error) {
+	return m.thumbnailResult, m.thumbnailErr
+}
+
 func (m *mockMediaClient) AnalyzeWaveform(_ context.Context, _ string, _ *WaveformOptions) (*WaveformResult, error) {
 	return m.waveformResult, m.waveformErr
 }
@@ -37,7 +42,7 @@ func (m *mockMediaClient) DetectScenes(_ context.Context, _ string, _ float64) (
 	return m.sceneResult, m.sceneErr
 }
 
-func (m *mockMediaClient) GenerateThumbnail(_ context.Context, _ string, _ float64, _, _ int, _ string) ([]byte, error) {
+func (m *mockMediaClient) ExtractFrameBytes(_ context.Context, _ string, _ float64, _, _ int, _ string) ([]byte, error) {
 	return m.thumbnailData, m.thumbnailErr
 }
 
@@ -77,36 +82,36 @@ func (m *mockIntelClient) AnalyzePacing(_ context.Context, _ *EDL, _ string) (*P
 // ---------------------------------------------------------------------------
 
 type mockPremiereClient struct {
-	pingResult       *PingResult
-	pingErr          error
-	projectState     *ProjectState
-	projectStateErr  error
-	seqResult        *SequenceResult
-	seqErr           error
-	importResult     *ImportResult
-	importErr        error
-	placeResult      *ClipResult
-	placeErr         error
-	removeErr        error
-	transitionErr    error
-	textResult       *ClipResult
-	textErr          error
-	audioErr         error
-	timelineState    *TimelineState
-	timelineErr      error
-	exportResult     *ExportResult
-	exportErr        error
-	edlExecResult    *EDLExecutionResult
-	edlExecErr       error
-	evalResult       string
-	evalErr          error
+	pingResult      *PingResult
+	pingErr         error
+	projectState    *ProjectState
+	projectStateErr error
+	seqResult       *SequenceResult
+	seqErr          error
+	importResult    *ImportResult
+	importErr       error
+	placeResult     *ClipResult
+	placeErr        error
+	removeErr       error
+	transitionErr   error
+	textResult      *ClipResult
+	textErr         error
+	audioErr        error
+	timelineState   *TimelineState
+	timelineErr     error
+	exportResult    *ExportResult
+	exportErr       error
+	edlExecResult   *EDLExecutionResult
+	edlExecErr      error
+	evalResult      string
+	evalErr         error
 	// evalResults, when set, dispatches EvalCommand responses per host
 	// function name (falling back to evalResult/evalErr).
-	evalResults map[string]string
-	evalAudioResult  map[string]any
-	evalAudioErr     error
-	evalImmResult    map[string]any
-	evalImmErr       error
+	evalResults     map[string]string
+	evalAudioResult map[string]any
+	evalAudioErr    error
+	evalImmResult   map[string]any
+	evalImmErr      error
 }
 
 func (m *mockPremiereClient) Ping(_ context.Context) (*PingResult, error) {
@@ -152,7 +157,6 @@ func (m *mockPremiereClient) GetTimelineState(_ context.Context, _ string) (*Tim
 func (m *mockPremiereClient) ExportSequence(_ context.Context, _ *ExportParams) (*ExportResult, error) {
 	return m.exportResult, m.exportErr
 }
-
 
 func (m *mockPremiereClient) EvalCommand(_ context.Context, functionName string, _ string) (string, error) {
 	if m.evalResults != nil {

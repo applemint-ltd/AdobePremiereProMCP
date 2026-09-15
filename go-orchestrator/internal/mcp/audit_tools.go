@@ -11,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/internal/audit"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/internal/audit"
 )
 
 // registerAuditTools exposes the audit trail as MCP tools: the raw log, a
@@ -78,11 +78,11 @@ func registerAuditTools(s *server.MCPServer, aud *audit.Auditor, snapshots *audi
 				return gomcp.NewToolResultError(fmt.Sprintf("failed to diff timelines: %v", err)), nil
 			}
 			return toolResultJSON(map[string]any{
-				"summary":     strings.Join(diff.HumanLines(), " "),
-				"human_lines": diff.HumanLines(),
-				"since":       stored.TS,
+				"summary":                 strings.Join(diff.HumanLines(), " "),
+				"human_lines":             diff.HumanLines(),
+				"since":                   stored.TS,
 				"baseline_correlation_id": stored.CID,
-				"details":     diff,
+				"details":                 diff,
 			})
 		},
 	)

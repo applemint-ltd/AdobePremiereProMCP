@@ -74,7 +74,7 @@ func (e *Engine) CaptureFrameAsBase64(ctx context.Context) (*FrameCaptureResult,
 		}
 	}
 
-	png, err := e.media.GenerateThumbnail(ctx, preview.OutputPath, atSeconds, width, height, "png")
+	png, err := e.media.ExtractFrameBytes(ctx, preview.OutputPath, atSeconds, width, height, "png")
 	if err != nil {
 		return nil, fmt.Errorf("CaptureFrameAsBase64: could not extract the frame: %w", err)
 	}

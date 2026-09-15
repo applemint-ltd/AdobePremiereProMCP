@@ -28,7 +28,17 @@ func registerResources(s *server.MCPServer) {
 			gomcp.WithResourceDescription("List of all tool categories with descriptions"),
 			gomcp.WithMIMEType("text/plain"),
 		),
-		handleToolCategories,
+		handleCurrentToolCategories,
+	)
+
+	s.AddResource(
+		gomcp.NewResource(
+			"config://workflow-skills",
+			"Workflow Skills",
+			gomcp.WithResourceDescription("Reusable Premiere workflow packs and matching tool profiles"),
+			gomcp.WithMIMEType("text/markdown"),
+		),
+		handleWorkflowSkills,
 	)
 
 	s.AddResource(
@@ -52,68 +62,7 @@ func registerResources(s *server.MCPServer) {
 	)
 }
 
-// ---------------------------------------------------------------------------
-// Resource handlers
-// ---------------------------------------------------------------------------
-
-func handlePremiereInstructions(
-	_ context.Context,
-	_ gomcp.ReadResourceRequest,
-) ([]gomcp.ResourceContents, error) {
-	return []gomcp.ResourceContents{
-		gomcp.TextResourceContents{
-			URI:      "config://premiere-instructions",
-			MIMEType: "text/plain",
-			Text: `You are controlling Adobe Premiere Pro 2026 via the PremierPro MCP server.
-The exposed tool set is a curated, verified-working subset — trust it over
-memory of other Premiere scripting surfaces.
-
-THE GOLDEN WORKFLOW (storyboard + clips -> reviewable cut):
- 1. premiere_ping — confirm the pipeline is alive; premiere_health_check for detail.
- 2. premiere_get_project / premiere_new_project / premiere_open_project.
- 3. Get media in: premiere_fetch_slack_attachment (Slack uploads),
-    premiere_import_media / premiere_import_files, premiere_scan_assets for folders.
- 4. Build the cut with the STORYBOARD pipeline (preferred):
-    premiere_storyboard_schema -> emit/collect a storyboard (JSON, shot-list
-    CSV, or script via script_text + assets_directory) ->
-    premiere_storyboard_validate (dry run; show the user unresolved clips) ->
-    premiere_assemble_storyboard (per-shot report: placements, transitions
-    applied-or-reported, baked-PNG text, SRT captions, music bed).
-    For manual edits: premiere_insert_clip / premiere_overwrite_clip
-    (non-ripple), premiere_create_subclip + premiere_trim_clip_end,
-    premiere_add_transition. premiere_auto_edit runs script->match->assemble
-    end-to-end through the same executor.
- 5. Show your work: premiere_capture_frame_base64 for a frame of the timeline.
- 6. Iterate with clip/audio/lumetri/transform tools.
- 7. Export: premiere_export (semantic presets: h264_1080p, h264_4k, prores_422,
-    prores_4444, dnxhd, gif — or a real .epr path). Exports QUEUE in Adobe
-    Media Encoder; poll premiere_get_export_progress rather than assuming done.
- 8. Explain what you did: premiere_get_session_digest ("what did you do?"),
-    premiere_what_changed (timeline diff since the last edit).
-
-PREMIERE 2026 HARD LIMITS (do not fight these):
-- On-screen text: scripted native/Essential Graphics text DOES NOT RENDER.
-  premiere_add_text_layer is the ONLY working text method — it bakes the text
-  to a PNG and places it as a clip. To change it, re-run the tool.
-- Subtitles: there is no auto-transcription. Captions come from an SRT file
-  (premiere_add_subtitles_from_srt) — native, editable, works.
-- Frame stills come from premiere_capture_frame_base64 / premiere_export_frame
-  (takes up to ~8s per frame; renders via a still-export preset).
-- Scene detection: premiere_detect_scene_changes (real ffmpeg analysis of a
-  media file). There is no working silence detection.
-
-CONVENTIONS:
-- Track indices are zero-based; video track 0 = V1.
-- Time positions are seconds (floating point).
-- Every tool call is audit-logged with a correlation ID; failures are honest —
-  an error means it did not happen, an ok means it did.
-- When talking to end users (e.g. via Slack), describe changes in plain
-  language: clip names and m:ss times, never track indices or raw seconds.`,
-		},
-	}, nil
-}
-
-func handleToolCategories(
+func handleCurrentToolCategories(
 	_ context.Context,
 	_ gomcp.ReadResourceRequest,
 ) ([]gomcp.ResourceContents, error) {
@@ -175,7 +124,105 @@ Not exposed by default:
 		},
 	}, nil
 }
+func handlePremiereInstructions(
+	_ context.Context,
+	_ gomcp.ReadResourceRequest,
+) ([]gomcp.ResourceContents, error) {
+	return []gomcp.ResourceContents{
+		gomcp.TextResourceContents{
+			URI:      "config://premiere-instructions",
+			MIMEType: "text/plain",
+			Text: `You are controlling Adobe Premiere Pro 2026 via the PremierPro MCP server.
+The exposed tool set is a curated, verified-working subset — trust it over
+memory of other Premiere scripting surfaces.
 
+THE GOLDEN WORKFLOW (storyboard + clips -> reviewable cut):
+ 1. premiere_ping — confirm the pipeline is alive; premiere_health_check for detail.
+ 2. premiere_get_project / premiere_new_project / premiere_open_project.
+ 3. Get media in: premiere_fetch_slack_attachment (Slack uploads),
+    premiere_import_media / premiere_import_files, premiere_scan_assets for folders.
+ 4. Build the cut with the STORYBOARD pipeline (preferred):
+    premiere_storyboard_schema -> emit/collect a storyboard (JSON, shot-list
+    CSV, or script via script_text + assets_directory) ->
+    premiere_storyboard_validate (dry run; show the user unresolved clips) ->
+    premiere_assemble_storyboard (per-shot report: placements, transitions
+    applied-or-reported, baked-PNG text, SRT captions, music bed).
+    For manual edits: premiere_insert_clip / premiere_overwrite_clip
+    (non-ripple), premiere_create_subclip + premiere_trim_clip_end,
+    premiere_add_transition. premiere_auto_edit runs script->match->assemble
+    end-to-end through the same executor.
+ 5. Show your work: premiere_capture_frame_base64 for a frame of the timeline.
+ 6. Iterate with clip/audio/lumetri/transform tools.
+ 7. Export: premiere_export (semantic presets: h264_1080p, h264_4k, prores_422,
+    prores_4444, dnxhd, gif — or a real .epr path). Exports QUEUE in Adobe
+    Media Encoder; poll premiere_get_export_progress rather than assuming done.
+ 8. Explain what you did: premiere_get_session_digest ("what did you do?"),
+    premiere_what_changed (timeline diff since the last edit).
+
+PREMIERE 2026 HARD LIMITS (do not fight these):
+- On-screen text: scripted native/Essential Graphics text DOES NOT RENDER.
+  premiere_add_text_layer is the ONLY working text method — it bakes the text
+  to a PNG and places it as a clip. To change it, re-run the tool.
+- Subtitles: there is no auto-transcription. Captions come from an SRT file
+  (premiere_add_subtitles_from_srt) — native, editable, works.
+- Frame stills come from premiere_capture_frame_base64 / premiere_export_frame
+  (takes up to ~8s per frame; renders via a still-export preset).
+- Scene detection: premiere_detect_scene_changes (real ffmpeg analysis of a
+  media file). There is no working silence detection.
+
+CONVENTIONS:
+- Track indices are zero-based; video track 0 = V1.
+- Time positions are seconds (floating point).
+- Every tool call is audit-logged with a correlation ID; failures are honest —
+  an error means it did not happen, an ok means it did.
+- When talking to end users (e.g. via Slack), describe changes in plain
+  language: clip names and m:ss times, never track indices or raw seconds.`,
+		},
+	}, nil
+}
+
+func handleWorkflowSkills(
+	_ context.Context,
+	_ gomcp.ReadResourceRequest,
+) ([]gomcp.ResourceContents, error) {
+	return []gomcp.ResourceContents{
+		gomcp.TextResourceContents{
+			URI:      "config://workflow-skills",
+			MIMEType: "text/markdown",
+			Text: `# Premiere workflow skills
+
+The repository ships reusable Agent Skills under skills/. Each skill states its
+required preflight, recovery-copy, and readback boundaries. A workflow must not
+treat a queued or attempted command as success.
+
+| Skill | Tool profile | Purpose |
+|---|---|---|
+| premiere-dialogue-cut | dialogue | Decoded-waveform, review-first spoken-word tightening |
+| premiere-captions | captions | Import, structurally validate, and export supplied timed captions |
+| premiere-social-reframe | social | Verified vertical and square derivatives |
+| premiere-transition-pack | transitions | Restrained video/audio transition recipes |
+| premiere-look-effects | effects | Parameterized effect chains and visual looks on a recovery copy |
+| premiere-proxy-conform | proxies | Proxy creation, attachment, and final conform |
+| premiere-batch-delivery | delivery | Sequential direct export, AME submission, and post-file media probing |
+
+Set MCP_TOOL_PROFILE to a comma-separated list of profile names before server
+startup, for example captions,effects. Specialized profiles always include the
+small core inspection/versioning set. The default is standard. The all profile
+excludes classified arbitrary execution/filesystem tools but still contains
+destructive Premiere operations. Use all,unsafe only with trusted input when
+arbitrary host execution and filesystem access are explicitly intended.
+Unknown-only profile values fall back to standard to avoid hiding tools because
+of a typo.
+
+Do not claim that an operation succeeded solely because it was attempted. Stop
+on explicit unsupported errors, verify mutations with state readback, and treat
+queued exports as pending until stable files are observed outside CEP and then
+validated with premiere_probe_media. For timeline mutation, preserve an
+untouched duplicate sequence or tool-created derivative. Treat timeline
+snapshots and saved sequence versions as audit/comparison records only.`,
+		},
+	}, nil
+}
 func handleExtendScriptReference(
 	_ context.Context,
 	_ gomcp.ReadResourceRequest,
@@ -304,13 +351,13 @@ Sequence Defaults:
   Audio Sample Rate: 48000 Hz
   Audio Bit Depth:   16-bit
 
-Export Presets:
-  h264_1080p    H.264, 1920x1080, ~20 Mbps VBR
-  h264_4k       H.264, 3840x2160, ~50 Mbps VBR
-  prores_422    Apple ProRes 422
-  prores_4444   Apple ProRes 4444 (with alpha)
-  dnxhd         Avid DNxHR HQX
-  gif           Animated GIF (low res)
+Named Export Presets:
+  h264_1080p, h264_4k, prores_422, prores_4444, and dnxhd are aliases.
+  Each alias must be mapped to a real Adobe Media Encoder .epr file through
+  its PREMIERE_EXPORT_PRESET_* bridge setting. The selected .epr file—not the
+  alias—defines the actual codec, dimensions, bitrate, and audio settings.
+  Use premiere_export_direct or premiere_export_via_ame when supplying an
+  explicit preset_path per export.
 
 Supported Media Formats (Import):
   Video:  .mp4, .mov, .avi, .mkv, .mxf, .r3d, .braw, .ari
@@ -337,7 +384,8 @@ Timecode:
 Speed:
   Default playback speed is 1.0 (100%).
   Values < 1.0 create slow motion, > 1.0 create fast motion.
-  Negative values reverse playback.`,
+  Typed placement accepts positive speed values only; use a separately
+  verified reverse-clip workflow for reverse playback.`,
 		},
 	}, nil
 }

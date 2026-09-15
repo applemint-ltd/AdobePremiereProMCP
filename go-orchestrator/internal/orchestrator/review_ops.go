@@ -168,7 +168,7 @@ func (e *Engine) GenerateReviewContactSheet(ctx context.Context, videoPath strin
 		ts := duration * (float64(i) + 0.5) / float64(n)
 		result.Timestamps = append(result.Timestamps, ts)
 
-		data, err := e.media.GenerateThumbnail(ctx, videoPath, ts, thumbW, thumbH, "png")
+		data, err := e.media.ExtractFrameBytes(ctx, videoPath, ts, thumbW, thumbH, "png")
 		if err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("frame at %.1fs failed: %v", ts, err))
 			continue

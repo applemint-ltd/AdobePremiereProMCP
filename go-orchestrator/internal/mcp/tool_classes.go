@@ -24,21 +24,21 @@ var readOnlyPrefixes = []string{
 
 // readOnlyExact are read-only tools whose names don't share a prefix.
 var readOnlyExact = map[string]bool{
-	"ping":                  true,
-	"health_check":          true,
-	"health_monitor":        true,
+	"ping":                   true,
+	"health_check":           true,
+	"health_monitor":         true,
 	"test_bridge_connection": true,
-	"convert_timecode":      true,
-	"clipboard_has_content": true,
-	"snapshot_timeline":     true, // reads state; persisting it is the caller's business
-	"generate_edit_summary": true,
-	"suggest_music":         true,
-	"suggest_replacements":  true,
-	"storyboard_schema":     true,
-	"storyboard_validate":   true,
-	"what_changed":          true,
-	"diff_timeline":         true,
-	"get_session_digest":    true,
+	"convert_timecode":       true,
+	"clipboard_has_content":  true,
+	"snapshot_timeline":      true, // reads state; persisting it is the caller's business
+	"generate_edit_summary":  true,
+	"suggest_music":          true,
+	"suggest_replacements":   true,
+	"storyboard_schema":      true,
+	"storyboard_validate":    true,
+	"what_changed":           true,
+	"diff_timeline":          true,
+	"get_session_digest":     true,
 }
 
 // noSnapshotPrefixes match tools that do change something (or have side

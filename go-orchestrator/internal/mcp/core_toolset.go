@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"os"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
@@ -147,6 +148,9 @@ var coreTools = []string{
 	"premiere_assemble_storyboard", "premiere_storyboard_validate", "premiere_storyboard_schema",
 	"premiere_auto_edit", "premiere_parse_script",
 
+	// Audio mixer readback (gates the audio-mix prompt)
+	"premiere_get_audio_mixer_state", "premiere_apply_audio_effect",
+
 	// State / audit / safety
 	"premiere_dump_project_state", "premiere_dump_sequence_state", "premiere_snapshot_timeline",
 	"premiere_get_state_snapshot", "premiere_compare_timeline_snapshots",
@@ -157,6 +161,12 @@ var coreTools = []string{
 
 // brokenTools call ExtendScript functions that do not exist, depend on APIs
 // removed in Premiere 2026, or return fabricated success. Never registered.
+// NOTE: upstream #13 implemented the host functions behind several entries
+// below that were previously marked broken purely because the ExtendScript
+// function did not exist (selectAll, listExportPresetsFromDisk, exportEDLFile,
+// estimateRenderTime, findSimilarClips, and ~20 more). They remain denied
+// because nothing here has been verified against live Premiere Pro 2026 yet —
+// move an entry out only after testing it in the app.
 var brokenTools = []string{
 	// Missing host functions (EvalCommand target absent from premiere.jsx/core.jsx)
 	"premiere_generate_rough_cut", "premiere_create_social_cuts", "premiere_refine_edit",
@@ -203,10 +213,49 @@ var escapeHatchTools = []string{
 	"premiere_schedule_script", "premiere_schedule_repeating", "premiere_cancel_scheduled_script",
 }
 
-// applyToolCuration prunes the registered tool surface according to the
-// lists above. Called once from NewMCPServer after registration, before any
-// session exists (DeleteTools would notify live sessions otherwise) — so
-// curation is startup-only by design.
+// stripUnsafeTools removes the tools that must never reach a client on
+// Premiere Pro 2026, regardless of which profile the operator selected:
+// brokenTools (missing host functions, removed APIs, fabricated success) are
+// always dropped, and escapeHatchTools stay hidden unless
+// MCP_ENABLE_ESCAPE_HATCHES=1. It runs before applyToolProfiles so that no
+// profile — including "all" — can widen the surface back onto broken tools.
+func stripUnsafeTools(s *server.MCPServer, logger *zap.Logger) {
+	all := s.ListTools()
+	// Either documented gate opens the escape hatches: the dedicated env var,
+	// or an explicit "unsafe" entry in MCP_TOOL_PROFILE. Neither is on by
+	// default, so the hatches stay closed unless asked for by name.
+	enableEscape := os.Getenv("MCP_ENABLE_ESCAPE_HATCHES") == "1" || profileSelectionIncludesUnsafe()
+
+	var del []string
+	for _, name := range brokenTools {
+		if _, ok := all[name]; ok {
+			del = append(del, name)
+		}
+	}
+	if !enableEscape {
+		for _, name := range escapeHatchTools {
+			if _, ok := all[name]; ok {
+				del = append(del, name)
+			}
+		}
+	}
+	if len(del) > 0 {
+		s.DeleteTools(del...)
+	}
+
+	logger.Info("stripped unsafe tools",
+		zap.Int("registered", len(all)),
+		zap.Int("removed", len(del)),
+		zap.Bool("escape_hatches", enableEscape),
+	)
+}
+
+// applyToolCuration narrows the surface to coreTools unless
+// MCP_EXPOSE_ALL_TOOLS=1. It is only consulted when the operator has not
+// selected a profile via MCP_TOOL_PROFILE; profiles do the shaping otherwise.
+// Called once from NewMCPServer after registration, before any session exists
+// (DeleteTools would notify live sessions otherwise) — so curation is
+// startup-only by design.
 func applyToolCuration(s *server.MCPServer, logger *zap.Logger) {
 	all := s.ListTools()
 
@@ -217,33 +266,13 @@ func applyToolCuration(s *server.MCPServer, logger *zap.Logger) {
 			logger.Warn("coreTools entry is not a registered tool", zap.String("tool", name))
 		}
 	}
-	broken := make(map[string]bool, len(brokenTools))
-	for _, name := range brokenTools {
-		broken[name] = true
-	}
-	escape := make(map[string]bool, len(escapeHatchTools))
-	for _, name := range escapeHatchTools {
-		escape[name] = true
-	}
 
 	exposeAll := os.Getenv("MCP_EXPOSE_ALL_TOOLS") == "1"
-	enableEscape := os.Getenv("MCP_ENABLE_ESCAPE_HATCHES") == "1"
 
 	var del []string
 	for name := range all {
-		switch {
-		case broken[name]:
-			del = append(del, name) // broken stays out no matter what
-		case escape[name]:
-			if !enableEscape {
-				del = append(del, name)
-			}
-		case core[name]:
-			// always exposed
-		default:
-			if !exposeAll {
-				del = append(del, name)
-			}
+		if !core[name] && !exposeAll {
+			del = append(del, name)
 		}
 	}
 	if len(del) > 0 {
@@ -254,6 +283,16 @@ func applyToolCuration(s *server.MCPServer, logger *zap.Logger) {
 		zap.Int("registered", len(all)),
 		zap.Int("exposed", len(all)-len(del)),
 		zap.Bool("expose_all", exposeAll),
-		zap.Bool("escape_hatches", enableEscape),
 	)
+}
+
+// profileSelectionIncludesUnsafe reports whether MCP_TOOL_PROFILE names the
+// "unsafe" profile, which is the profile-side gate for escapeHatchTools.
+func profileSelectionIncludesUnsafe() bool {
+	for _, value := range strings.Split(os.Getenv("MCP_TOOL_PROFILE"), ",") {
+		if strings.EqualFold(strings.TrimSpace(value), "unsafe") {
+			return true
+		}
+	}
+	return false
 }

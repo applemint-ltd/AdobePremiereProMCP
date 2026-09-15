@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/anthropics/premierpro-mcp/go-orchestrator/assets"
+	"github.com/applemint-ltd/AdobePremiereProMCP/go-orchestrator/assets"
 )
 
 // projectSubDir returns a directory named subDir next to the open project,
